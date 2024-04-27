@@ -1,0 +1,100 @@
+use crate::prelude::*;
+
+/// 检查位图中的某一位是否被设置
+/// 参数 bmap 位图缓冲区
+/// 参数 bit 要检查的位
+pub fn ext4_bmap_is_bit_set(bmap: &[u8], bit: u32) -> bool {
+    bmap[(bit >> 3) as usize] & (1 << (bit & 7)) != 0
+}
+
+/// 检查位图中的某一位是否被清除
+/// 参数 bmap 位图缓冲区
+/// 参数 bit 要检查的位
+pub fn ext4_bmap_is_bit_clr(bmap: &[u8], bit: u32) -> bool {
+    !ext4_bmap_is_bit_set(bmap, bit)
+}
+
+/// 设置位图中的某一位
+/// 参数 bmap 位图
+/// 参数 bit 要设置的位
+pub fn ext4_bmap_bit_set(bmap: &mut [u8], bit: u32) {
+    bmap[(bit >> 3) as usize] |= 1 << (bit & 7);
+}
+
+// 查找位图中第一个为0的位
+pub fn ext4_bmap_bit_find_clr(bmap: &[u8], sbit: u32, ebit: u32, bit_id: &mut u32) -> bool {
+    let mut i: u32;
+    let mut bcnt = ebit - sbit;
+
+    i = sbit;
+
+    while i & 7 != 0 {
+        if bcnt == 0 {
+            return false;
+        }
+
+        if ext4_bmap_is_bit_clr(bmap, i) {
+            *bit_id = sbit;
+            return true;
+        }
+
+        i += 1;
+        bcnt -= 1;
+    }
+
+    let mut sbit = i;
+    let mut bmap = &bmap[(sbit >> 3) as usize..];
+    while bcnt >= 8 {
+        if bmap[0] != 0xFF {
+            for i in 0..8 {
+                if ext4_bmap_is_bit_clr(bmap, i) {
+                    *bit_id = sbit + i;
+                    return true;
+                }
+            }
+        }
+
+        bmap = &bmap[1..];
+        bcnt -= 8;
+        sbit += 8;
+    }
+
+    for i in 0..bcnt {
+        if ext4_bmap_is_bit_clr(bmap, i) {
+            *bit_id = sbit + i;
+            return true;
+        }
+    }
+
+    false
+}
+
+pub fn ext4_path_skip<'a>(path: &'a str, skip: &str) -> &'a str {
+    let path = &path.trim_start_matches(skip);
+    path
+}
+
+pub fn ext4_path_check(path: &str, is_goal: &mut bool) -> usize {
+    for (i, c) in path.chars().enumerate() {
+        if c == '/' {
+            *is_goal = false;
+            return i;
+        }
+    }
+    let path = path.to_string();
+    *is_goal = true;
+    return path.len();
+}
+
+// A function that takes a &str and returns a &[char]
+pub fn get_name(
+    name: [u8; 255],
+    len: usize,
+) -> core::result::Result<String, alloc::string::FromUtf8Error> {
+    let mut v: Vec<u8> = Vec::new();
+    for i in 0..len {
+        v.push(name[i]);
+    }
+    let s = String::from_utf8(v);
+    s
+}
