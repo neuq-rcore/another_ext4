@@ -1,17 +1,17 @@
-use crate::constants::*;
-use crate::prelude::*;
 use super::crc::*;
 use super::BlockDevice;
 use super::Ext4Block;
 use super::Ext4Superblock;
+use crate::constants::*;
+use crate::prelude::*;
 
 #[repr(C)]
-pub union Ext4DirEnInternal {
+pub union Ext4DirEnInner {
     pub name_length_high: u8, // 高8位的文件名长度
     pub inode_type: u8,       // 引用的inode的类型（在rev >= 0.5中）
 }
 
-impl Debug for Ext4DirEnInternal {
+impl Debug for Ext4DirEnInner {
     fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
         unsafe {
             write!(
@@ -23,7 +23,7 @@ impl Debug for Ext4DirEnInternal {
     }
 }
 
-impl Default for Ext4DirEnInternal {
+impl Default for Ext4DirEnInner {
     fn default() -> Self {
         Self {
             name_length_high: 0,
@@ -34,11 +34,11 @@ impl Default for Ext4DirEnInternal {
 #[repr(C)]
 #[derive(Debug)]
 pub struct Ext4DirEntry {
-    pub inode: u32,               // 该目录项指向的inode的编号
-    pub entry_len: u16,           // 到下一个目录项的距离
-    pub name_len: u8,             // 低8位的文件名长度
-    pub inner: Ext4DirEnInternal, // 联合体成员
-    pub name: [u8; 255],          // 文件名
+    pub inode: u32,            // 该目录项指向的inode的编号
+    pub entry_len: u16,        // 到下一个目录项的距离
+    pub name_len: u8,          // 低8位的文件名长度
+    pub inner: Ext4DirEnInner, // 联合体成员
+    pub name: [u8; 255],       // 文件名
 }
 
 impl Default for Ext4DirEntry {
@@ -47,7 +47,7 @@ impl Default for Ext4DirEntry {
             inode: 0,
             entry_len: 0,
             name_len: 0,
-            inner: Ext4DirEnInternal::default(),
+            inner: Ext4DirEnInner::default(),
             name: [0; 255],
         }
     }

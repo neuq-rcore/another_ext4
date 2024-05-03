@@ -11,11 +11,19 @@ mod ext4_defs;
 mod ext4_error;
 mod jbd2;
 mod prelude;
-mod utils;
 
 pub use ext4::*;
 pub use ext4_defs::*;
 pub use ext4_error::*;
-pub use utils::*;
 
 pub const BLOCK_SIZE: usize = 4096;
+
+#[cfg(test)]
+mod unit_test {
+    // use crate::Ext4;
+
+    #[test]
+    fn create_fs() {
+        // let ext4 = Ext4::new();
+    }
+}

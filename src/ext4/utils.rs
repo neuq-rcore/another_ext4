@@ -1,4 +1,5 @@
 use crate::prelude::*;
+use crate::constants::*;
 
 /// 检查位图中的某一位是否被设置
 /// 参数 bmap 位图缓冲区
@@ -97,4 +98,17 @@ pub fn get_name(
     }
     let s = String::from_utf8(v);
     s
+}
+
+// 使用libc库定义的常量
+pub fn ext4_parse_flags(flags: &str) -> Result<u32> {
+    match flags {
+        "r" | "rb" => Ok(O_RDONLY),
+        "w" | "wb" => Ok(O_WRONLY | O_CREAT | O_TRUNC),
+        "a" | "ab" => Ok(O_WRONLY | O_CREAT | O_APPEND),
+        "r+" | "rb+" | "r+b" => Ok(O_RDWR),
+        "w+" | "wb+" | "w+b" => Ok(O_RDWR | O_CREAT | O_TRUNC),
+        "a+" | "ab+" | "a+b" => Ok(O_RDWR | O_CREAT | O_APPEND),
+        _ => Err(Ext4Error::new(Errnum::EINVAL)),
+    }
 }

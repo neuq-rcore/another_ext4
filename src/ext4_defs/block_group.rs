@@ -1,3 +1,12 @@
+//！# The Defination of Ext4 Block Group Description
+//! 
+//! Block Group Descriptor is the second field of Ext4 Block Group.
+//! 
+//! | Super Block | Group Descriptor | Reserved GDT Blocks | Block Bitmap |
+//! | Inode Bitmap | Inode Table | Data Blocks |
+//! 
+//! See [`super`] for more information.
+
 use crate::constants::*;
 use crate::prelude::*;
 use super::crc::*;
@@ -6,7 +15,7 @@ use super::Ext4Superblock;
 
 #[derive(Debug, Default, Clone, Copy)]
 #[repr(C, packed)]
-pub struct Ext4BlockGroup {
+pub struct Ext4BlockGroupDesc {
     block_bitmap_lo: u32,            // 块位图块
     inode_bitmap_lo: u32,            // 节点位图块
     inode_table_first_block_lo: u32, // 节点表块
@@ -33,34 +42,33 @@ pub struct Ext4BlockGroup {
     reserved: u32,                   // 填充
 }
 
-impl TryFrom<&[u8]> for Ext4BlockGroup {
+impl TryFrom<&[u8]> for Ext4BlockGroupDesc {
     type Error = u64;
     fn try_from(data: &[u8]) -> core::result::Result<Self, u64> {
-        let data = &data[..size_of::<Ext4BlockGroup>()];
+        let data = &data[..size_of::<Ext4BlockGroupDesc>()];
         Ok(unsafe { core::ptr::read(data.as_ptr() as *const _) })
     }
 }
 
-impl Ext4BlockGroup {
+impl Ext4BlockGroupDesc {
     pub fn load(
         block_device: Arc<dyn BlockDevice>,
         super_block: &Ext4Superblock,
-        block_group_idx: usize,
-        // fs: Weak<Ext4>,
+        block_group_id: usize,
     ) -> core::result::Result<Self, u64> {
         let dsc_cnt = BLOCK_SIZE / super_block.desc_size() as usize;
-        let dsc_id = block_group_idx / dsc_cnt;
+        let dsc_id = block_group_id / dsc_cnt;
         let first_data_block = super_block.first_data_block();
 
         let block_id = first_data_block as usize + dsc_id + 1;
-        let offset = (block_group_idx % dsc_cnt) * super_block.desc_size() as usize;
+        let offset = (block_group_id % dsc_cnt) * super_block.desc_size() as usize;
 
         let data = block_device.read_offset(block_id * BLOCK_SIZE);
 
         let block_group_data =
-            &data[offset as usize..offset as usize + size_of::<Ext4BlockGroup>()];
+            &data[offset as usize..offset as usize + size_of::<Ext4BlockGroupDesc>()];
 
-        let bg = Ext4BlockGroup::try_from(block_group_data);
+        let bg = Ext4BlockGroupDesc::try_from(block_group_data);
 
         bg
     }
@@ -151,7 +159,7 @@ impl Ext4BlockGroup {
         let offset = (bgid % dsc_cnt) * super_block.desc_size() as usize;
 
         let data = unsafe {
-            core::slice::from_raw_parts(self as *const _ as *const u8, size_of::<Ext4BlockGroup>())
+            core::slice::from_raw_parts(self as *const _ as *const u8, size_of::<Ext4BlockGroupDesc>())
         };
         block_device.write_offset(block_id * BLOCK_SIZE + offset, data);
     }
@@ -249,7 +257,7 @@ impl Ext4BlockGroup {
     }
 }
 
-pub fn ext4_ialloc_bitmap_csum(bitmap: &[u8], s: &Ext4Superblock) -> u32 {
+fn ext4_ialloc_bitmap_csum(bitmap: &[u8], s: &Ext4Superblock) -> u32 {
     let inodes_per_group = s.inodes_per_group();
     let uuid = s.uuid();
     let mut csum = ext4_crc32c(EXT4_CRC32_INIT, &uuid, uuid.len() as u32);
@@ -257,7 +265,7 @@ pub fn ext4_ialloc_bitmap_csum(bitmap: &[u8], s: &Ext4Superblock) -> u32 {
     csum
 }
 
-pub fn ext4_balloc_bitmap_csum(bitmap: &[u8], s: &Ext4Superblock) -> u32 {
+fn ext4_balloc_bitmap_csum(bitmap: &[u8], s: &Ext4Superblock) -> u32 {
     let blocks_per_group = s.blocks_per_group();
     let uuid = s.uuid();
     let mut csum = ext4_crc32c(EXT4_CRC32_INIT, &uuid, uuid.len() as u32);

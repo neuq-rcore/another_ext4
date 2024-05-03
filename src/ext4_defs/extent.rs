@@ -1,6 +1,6 @@
 use super::Ext4Inode;
 use crate::constants::*;
-use core::mem::size_of;
+use crate::prelude::*;
 
 #[derive(Debug, Default, Clone, Copy)]
 #[repr(C)]
@@ -161,6 +161,47 @@ impl<T> TryFrom<&[T]> for Ext4Extent {
     }
 }
 
+impl Ext4Extent {
+    pub fn pblock(&self) -> u64 {
+        self.start_lo as u64 | ((self.start_hi as u64) << 32)
+    }
+
+    pub fn is_unwritten(&self) -> bool {
+        // 返回extent是否是未写入的
+        self.block_count > EXT_INIT_MAX_LEN
+    }
+
+    pub fn actual_len(&self) -> u16 {
+        // 返回extent的实际长度
+        if self.block_count <= EXT_INIT_MAX_LEN {
+            self.block_count
+        } else {
+            self.block_count - EXT_INIT_MAX_LEN
+        }
+    }
+
+    pub fn mark_unwritten(&mut self) {
+        (*self).block_count |= EXT_INIT_MAX_LEN;
+    }
+
+    /// 检查是否可以将ex2合并到ex1的后面
+    pub fn can_append(ex1: &Ext4Extent, ex2: &Ext4Extent) -> bool {
+        if ex1.pblock() + ex1.actual_len() as u64 != ex2.pblock() {
+            return false;
+        }
+        if ex1.is_unwritten() && ex1.actual_len() + ex2.actual_len() > EXT_UNWRITTEN_MAX_LEN {
+            return false;
+        } else if ex1.actual_len() + ex2.actual_len() > EXT_INIT_MAX_LEN {
+            return false;
+        }
+        // 检查逻辑块号是否连续
+        if ex1.first_block + ex1.actual_len() as u32 != ex2.first_block {
+            return false;
+        }
+        return true;
+    }
+}
+
 #[derive(Debug, Clone, Copy)]
 pub struct Ext4ExtentPath {
     // Physical block number
@@ -225,92 +266,88 @@ impl Default for Ext4ExtentPathOld {
     }
 }
 
-#[allow(unused)]
 pub fn ext4_first_extent(hdr: *const Ext4ExtentHeader) -> *const Ext4Extent {
-    unsafe {
-        let offset = core::mem::size_of::<Ext4ExtentHeader>();
-
-        (hdr as *const u8).add(offset) as *const Ext4Extent
+    if hdr.is_null() {
+        return ptr::null_mut();
     }
+    unsafe { hdr.add(1) as *const Ext4Extent }
 }
 
 pub fn ext4_first_extent_mut(hdr: *mut Ext4ExtentHeader) -> *mut Ext4Extent {
-    unsafe {
-        let offset = core::mem::size_of::<Ext4ExtentHeader>();
+    ext4_first_extent(hdr) as *mut Ext4Extent
+}
 
-        (hdr as *mut u8).add(offset) as *mut Ext4Extent
-    }
+pub fn ext4_first_extent_index(hdr: *const Ext4ExtentHeader) -> *const Ext4ExtentIndex {
+    ext4_first_extent(hdr) as *const Ext4ExtentIndex
+}
+
+pub fn ext4_first_extent_index_mut(hdr: *mut Ext4ExtentHeader) -> *mut Ext4ExtentIndex {
+    ext4_first_extent(hdr) as *mut Ext4ExtentIndex
 }
 
 #[allow(unused)]
 pub fn ext4_last_extent(hdr: *const Ext4ExtentHeader) -> *const Ext4Extent {
-    unsafe {
-        let hdr_size = core::mem::size_of::<Ext4ExtentHeader>();
-        let ext_size = core::mem::size_of::<Ext4Extent>();
-        let hdr_ref = core::mem::transmute::<*const Ext4ExtentHeader, &Ext4ExtentHeader>(hdr);
-        let ext_count = hdr_ref.entries_count as usize;
-        (hdr as *const u8).add(hdr_size + (ext_count - 1) * ext_size) as *const Ext4Extent
+    if hdr.is_null() {
+        return ptr::null_mut();
     }
+    // Get the number of extents from header
+    let count = unsafe { (*hdr).entries_count as usize };
+    if count == 0 {
+        return ptr::null_mut();
+    }
+    // Get the pointer to the first extent
+    let first = ext4_first_extent(hdr);
+    // Add count - 1 offset to get the last extent
+    unsafe { first.add(count - 1) }
 }
 
 pub fn ext4_last_extent_mut(hdr: *mut Ext4ExtentHeader) -> *mut Ext4Extent {
-    unsafe {
-        let hdr_size = core::mem::size_of::<Ext4ExtentHeader>();
-        let ext_size = core::mem::size_of::<Ext4Extent>();
-        let hdr_ref = core::mem::transmute::<*mut Ext4ExtentHeader, &Ext4ExtentHeader>(hdr);
-        let ext_count = hdr_ref.entries_count as usize;
-
-        (hdr as *mut u8).add(hdr_size + (ext_count - 1) * ext_size) as *mut Ext4Extent
-    }
-}
-
-#[allow(unused)]
-pub fn ext4_first_extent_index(hdr: *const Ext4ExtentHeader) -> *const Ext4ExtentIndex {
-    unsafe {
-        let offset = core::mem::size_of::<Ext4ExtentHeader>();
-
-        (hdr as *const u8).add(offset) as *const Ext4ExtentIndex
-    }
-}
-
-pub fn ext4_first_extent_index_mut(hdr: *mut Ext4ExtentHeader) -> *mut Ext4ExtentIndex {
-    unsafe {
-        let offset = core::mem::size_of::<Ext4ExtentHeader>();
-
-        (hdr as *mut u8).add(offset) as *mut Ext4ExtentIndex
-    }
+    ext4_last_extent(hdr) as *mut Ext4Extent
 }
 
 #[allow(unused)]
 pub fn ext4_last_extent_index(hdr: *const Ext4ExtentHeader) -> *const Ext4ExtentIndex {
-    unsafe {
-        let hdr_size = core::mem::size_of::<Ext4ExtentHeader>();
-        let ext_size = core::mem::size_of::<Ext4ExtentIndex>();
-        let hdr_ref = core::mem::transmute::<*const Ext4ExtentHeader, &Ext4ExtentHeader>(hdr);
-        let ext_count = hdr_ref.entries_count as usize;
-        (hdr as *const u8).add(hdr_size + (ext_count - 1) * ext_size) as *const Ext4ExtentIndex
+    if hdr.is_null() {
+        return ptr::null_mut();
     }
+    // Get the number of extents from header
+    let count = unsafe { (*hdr).entries_count as usize };
+    if count == 0 {
+        return ptr::null_mut();
+    }
+    // Get the pointer to the first extent_index
+    let first = ext4_first_extent_index(hdr);
+    // Add count - 1 offset to get the last extent_index
+    unsafe { first.add(count - 1) }
 }
 
 pub fn ext4_last_extent_index_mut(hdr: *mut Ext4ExtentHeader) -> *mut Ext4ExtentIndex {
-    unsafe {
-        let hdr_size = core::mem::size_of::<Ext4ExtentHeader>();
-        let ext_size = core::mem::size_of::<Ext4ExtentIndex>();
-        let hdr_ref = core::mem::transmute::<*mut Ext4ExtentHeader, &Ext4ExtentHeader>(hdr);
-        let ext_count = hdr_ref.entries_count as usize;
-        (hdr as *mut u8).add(hdr_size + (ext_count - 1) * ext_size) as *mut Ext4ExtentIndex
+    ext4_last_extent_index(hdr) as *mut Ext4ExtentIndex
+}
+
+pub fn ext4_extent_hdr(inode: &Ext4Inode) -> *const Ext4ExtentHeader {
+    &inode.block as *const [u32; 15] as *const Ext4ExtentHeader
+}
+
+pub fn ext4_extent_hdr_mut(inode: &mut Ext4Inode) -> *mut Ext4ExtentHeader {
+    ext4_extent_hdr(inode) as *mut Ext4ExtentHeader
+}
+
+pub fn ext4_depth(inode: &Ext4Inode) -> u16 {
+    unsafe { (*ext4_extent_hdr(inode)).depth }
+}
+
+pub fn ext4_idx_pblock(idx: *mut Ext4ExtentIndex) -> u64 {
+    // 如果索引为空，返回0
+    if idx.is_null() {
+        return 0;
     }
-}
-
-pub fn ext4_inode_hdr(inode: &Ext4Inode) -> *const Ext4ExtentHeader {
-    let eh = &inode.block as *const [u32; 15] as *const Ext4ExtentHeader;
-    eh
-}
-
-#[allow(unused)]
-pub fn ext4_inode_hdr_mut(inode: &mut Ext4Inode) -> *mut Ext4ExtentHeader {
-    let eh = &mut inode.block as *mut [u32; 15] as *mut Ext4ExtentHeader;
-    eh
+    // 获取索引的低32位物理块号
+    let pblock_lo = unsafe { (*idx).leaf_lo } as u64;
+    // 如果支持64位物理块号，获取索引的高16位物理块号
+    let pblock_hi = unsafe { (*idx).leaf_hi } as u64;
+    // 返回索引的物理块号
+    (pblock_hi << 32) | pblock_lo
 }
 
 /// 定义ext4_ext_binsearch函数，接受一个指向ext4_extent_path的可变引用和一个逻辑块号
@@ -358,7 +395,7 @@ pub fn ext4_ext_binsearch(path: &mut Ext4ExtentPath, block: u32) -> bool {
     true
 }
 
-pub fn ext4_ext_binsearch_idx(path: &mut Ext4ExtentPath, block: ext4_lblk_t) -> bool {
+pub fn ext4_ext_binsearch_idx(path: &mut Ext4ExtentPath, block: Ext4LogicBlockId) -> bool {
     // 获取extent header的引用
     let eh = path.header;
 
@@ -394,7 +431,7 @@ pub fn ext4_ext_binsearch_idx(path: &mut Ext4ExtentPath, block: ext4_lblk_t) -> 
 }
 
 #[allow(unused)]
-pub fn ext4_ext_find_extent(eh: *mut Ext4ExtentHeader, block: ext4_lblk_t) -> *mut Ext4Extent {
+pub fn ext4_ext_find_extent(eh: *mut Ext4ExtentHeader, block: Ext4LogicBlockId) -> *mut Ext4Extent {
     // 初始化一些变量
     let mut low: i32;
     let mut high: i32;

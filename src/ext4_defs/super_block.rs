@@ -1,7 +1,13 @@
-use crate::constants::*;
-use crate::prelude::*;
+//! # The Defination of Ext4 Super Block
+//!
+//! Super Block is the first field of Ext4 Block Group.
+//!
+//! See [`super::block_group`] for details.
+
 use super::BlockDevice;
 use super::Ext4Inode;
+use crate::constants::*;
+use crate::prelude::*;
 
 // 结构体表示超级块
 #[repr(C)]
@@ -115,6 +121,44 @@ impl TryFrom<Vec<u8>> for Ext4Superblock {
 }
 
 impl Ext4Superblock {
+    pub fn first_data_block(&self) -> u32 {
+        self.first_data_block
+    }
+
+    pub fn free_inodes_count(&self) -> u32 {
+        self.free_inodes_count
+    }
+    
+    pub fn features_read_only(&self) -> u32 {
+        self.features_read_only
+    }
+
+    /// Returns total number of inodes.
+    pub fn total_inodes(&self) -> u32 {
+        self.inodes_count
+    }
+    
+    /// Returns the number of blocks in each block group.
+    pub fn blocks_per_group(&self) -> u32 {
+        self.blocks_per_group
+    }
+
+    /// Returns the size of block.
+    pub fn block_size(&self) -> u32 {
+        1024 << self.log_block_size
+    }
+    
+    /// Returns the number of inodes in each block group.
+    pub fn inodes_per_group(&self) -> u32 {
+        self.inodes_per_group
+    }
+    
+    /// Returns the number of block groups.
+    pub fn block_groups_count(&self) -> u32 {
+        (((self.blocks_count_hi.to_le() as u64) << 32) as u32 | self.blocks_count_lo)
+        / self.blocks_per_group
+    }
+    
     /// Returns the size of inode structure.
     pub fn inode_size(&self) -> u16 {
         self.inode_size
@@ -142,47 +186,8 @@ impl Ext4Superblock {
         self.uuid
     }
 
-    pub fn first_data_block(&self) -> u32 {
-        self.first_data_block
-    }
-
-    pub fn free_inodes_count(&self) -> u32 {
-        self.free_inodes_count
-    }
-
-    pub fn features_read_only(&self) -> u32 {
-        self.features_read_only
-    }
-
-    /// Returns total number of inodes.
-    pub fn total_inodes(&self) -> u32 {
-        self.inodes_count
-    }
-
-    /// Returns the number of blocks in each block group.
-    pub fn blocks_per_group(&self) -> u32 {
-        self.blocks_per_group
-    }
-
-    /// Returns the size of block.
-    pub fn block_size(&self) -> u32 {
-        1024 << self.log_block_size
-    }
-
-    /// Returns the number of inodes in each block group.
-    pub fn inodes_per_group(&self) -> u32 {
-        self.inodes_per_group
-    }
-
-    /// Returns the number of block groups.
-    pub fn block_groups_count(&self) -> u32 {
-        (((self.blocks_count_hi.to_le() as u64) << 32) as u32 | self.blocks_count_lo)
-            / self.blocks_per_group
-    }
-
     pub fn desc_size(&self) -> u16 {
         let size = self.desc_size;
-
         if size < EXT4_MIN_BLOCK_GROUP_DESCRIPTOR_SIZE {
             return EXT4_MIN_BLOCK_GROUP_DESCRIPTOR_SIZE as u16;
         } else {
@@ -218,38 +223,11 @@ impl Ext4Superblock {
         self.free_blocks_count_lo = ((free_blocks << 32) >> 32).to_le() as u32;
         self.free_blocks_count_hi = (free_blocks >> 32) as u32;
     }
-
+    
     pub fn sync_to_disk(&self, block_device: Arc<dyn BlockDevice>) {
         let data = unsafe {
             core::slice::from_raw_parts(self as *const _ as *const u8, size_of::<Ext4Superblock>())
         };
         block_device.write_offset(BASE_OFFSET, data);
-    }
-
-    pub fn sync_to_disk_with_csum(&self, block_device: Arc<dyn BlockDevice>) {
-        let data = unsafe {
-            core::slice::from_raw_parts(self as *const _ as *const u8, size_of::<Ext4Superblock>())
-        };
-        block_device.write_offset(BASE_OFFSET, data);
-    }
-
-    pub fn sync_super_block_to_disk(&self, block_device: Arc<dyn BlockDevice>) {
-        let data = unsafe {
-            core::slice::from_raw_parts(self as *const _ as *const u8, size_of::<Ext4Superblock>())
-        };
-        block_device.write_offset(BASE_OFFSET, data);
-    }
-}
-
-#[allow(unused)]
-pub fn ext4_inodes_in_group_cnt(bgid: u32, s: &Ext4Superblock) -> u32 {
-    let block_group_count = s.block_groups_count();
-    let inodes_per_group = s.inodes_per_group;
-    let total_inodes = ((s.inodes_count as u64) << 32) as u32;
-
-    if bgid < block_group_count - 1 {
-        inodes_per_group
-    } else {
-        total_inodes - ((block_group_count - 1) * inodes_per_group)
     }
 }

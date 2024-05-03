@@ -4,10 +4,8 @@ use bitflags::bitflags;
 
 pub const EOK: usize = 0;
 
-#[allow(non_camel_case_types)]
-pub type ext4_lblk_t = u32;
-#[allow(non_camel_case_types)]
-pub type ext4_fsblk_t = u64;
+pub type Ext4LogicBlockId = u32;
+pub type Ext4FsBlockId = u64;
 
 pub const EXT4_INODE_FLAG_EXTENTS: usize = 0x00080000; /* Inode uses extents */
 pub const EXT4_MIN_BLOCK_GROUP_DESCRIPTOR_SIZE: u16 = 32;
@@ -28,7 +26,7 @@ pub const EXT4_INODE_MODE_SOFTLINK: usize = 0xA000;
 pub const EXT4_INODE_MODE_SOCKET: usize = 0xC000;
 pub const EXT4_INODE_MODE_TYPE_MASK: u16 = 0xF000;
 
-pub const EXT_MAX_BLOCKS: ext4_lblk_t = core::u32::MAX;
+pub const EXT_MAX_BLOCKS: Ext4LogicBlockId = core::u32::MAX;
 
 /// Maximum bytes in a path
 pub const PATH_MAX: usize = 4096;
@@ -38,6 +36,9 @@ pub const NAME_MAX: usize = 255;
 
 /// The upper limit for resolving symbolic links
 pub const SYMLINKS_MAX: usize = 40;
+
+/// The inode number of root inode
+pub const EXT4_ROOT_INO: u32 = 2;
 
 #[allow(non_camel_case_types)]
 #[derive(Debug, PartialEq)]

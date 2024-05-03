@@ -15,6 +15,7 @@ pub(crate) use alloc::sync::Arc;
 pub(crate) use alloc::sync::Weak;
 pub(crate) use alloc::vec;
 pub(crate) use alloc::vec::Vec;
+pub(crate) use alloc::borrow::ToOwned;
 pub(crate) use bitflags::bitflags;
 pub(crate) use core::any::Any;
 pub(crate) use core::ffi::CStr;
