@@ -139,7 +139,7 @@ impl Ext4 {
         inode_ref
             .inode
             .set_blocks_count(inode_blocks as u32);
-        self.write_back_inode(inode_ref);
+        self.write_back_inode_with_csum(inode_ref);
 
         /* Update block group free blocks count */
         let mut fb_cnt = bg.get_free_blocks_count();
@@ -169,7 +169,7 @@ impl Ext4 {
             .inode
             .set_size(inode_size + BLOCK_SIZE as u64);
     
-        self.write_back_inode(inode_ref);
+        self.write_back_inode_with_csum(inode_ref);
     
         // let mut inode_ref = Ext4InodeRef::get_inode_ref(inode_ref.fs().self_ref.clone(), inode_ref.inode_num);
     

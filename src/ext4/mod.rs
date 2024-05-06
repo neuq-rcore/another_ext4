@@ -6,6 +6,7 @@ mod alloc;
 mod dir;
 mod extent;
 mod file;
+mod journal;
 mod link;
 mod utils;
 
@@ -60,52 +61,28 @@ impl Ext4 {
         }
     }
 
-    // start transaction
-    pub fn ext4_trans_start(&self) {}
-
-    // stop transaction
-    pub fn ext4_trans_abort(&self) {}
-
+    /// Read an inode from block device, return an`Ext4InodeRef` that combines
+    /// the inode and its id.
     fn get_inode_ref(&self, inode_id: u32) -> Ext4InodeRef {
-        let super_block = self.super_block;
-
-        let inodes_per_group = super_block.inodes_per_group();
-        let inode_size = super_block.inode_size() as u64;
-        let group = (inode_id - 1) / inodes_per_group;
-        let index = (inode_id - 1) % inodes_per_group;
-        let group = self.block_groups[group as usize];
-        let inode_table_blk_num = group.inode_table_blk_num();
-        let offset =
-            inode_table_blk_num as usize * BLOCK_SIZE + index as usize * inode_size as usize;
-
-        let data = self.block_device.read_offset(offset);
-        let inode_data = &data[..core::mem::size_of::<Ext4Inode>()];
-        let inode = Ext4Inode::try_from(inode_data).unwrap();
-
-        Ext4InodeRef::new(inode_id, inode)
+        Ext4InodeRef::read_from_disk(self.block_device.clone(), &self.super_block, inode_id)
     }
 
+    /// Read the root inode from block device
     fn get_root_inode_ref(&self) -> Ext4InodeRef {
         self.get_inode_ref(EXT4_ROOT_INO)
     }
 
-    fn write_back_inode(&self, inode_ref: &mut Ext4InodeRef) {
-        let block_device = self.block_device.clone();
-        let super_block = self.super_block.clone();
-        let inode_id = inode_ref.inode_id;
+    /// Write back an inode to block device with checksum
+    fn write_back_inode_with_csum(&self, inode_ref: &mut Ext4InodeRef) {
         inode_ref
-            .inode
-            .sync_to_disk_with_csum(block_device, &super_block, inode_id)
+            .sync_to_disk_with_csum(self.block_device.clone(), &self.super_block)
             .unwrap()
     }
 
+    /// Write back an inode to block device without checksum
     fn write_back_inode_without_csum(&self, inode_ref: &mut Ext4InodeRef) {
-        let block_device = self.block_device.clone();
-        let super_block = self.super_block.clone();
-        let inode_id = inode_ref.inode_id;
         inode_ref
-            .inode
-            .sync_to_disk(block_device, &super_block, inode_id)
+            .sync_to_disk_without_csum(self.block_device.clone(), &self.super_block)
             .unwrap()
     }
 }

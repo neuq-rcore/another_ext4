@@ -180,7 +180,7 @@ impl Ext4Inode {
 
     /// Find the position of an inode in the block device.
     ///
-    /// Each block group contains sb->s_inodes_per_group inodes.
+    /// Each block group contains `sb.inodes_per_group` inodes.
     /// Because inode 0 is defined not to exist, this formula can
     /// be used to find the block group that an inode lives in:
     /// `bg = (inode_id - 1) / sb.inodes_per_group`.
@@ -189,8 +189,7 @@ impl Ext4Inode {
     /// inode table at `index = (inode_id - 1) % sb.inodes_per_group`.
     /// To get the byte address within the inode table, use
     /// `offset = index * sb.inode_size`.
-    pub fn get_inode_disk_pos(
-        &self,
+    fn inode_disk_pos(
         super_block: &Ext4Superblock,
         block_device: Arc<dyn BlockDevice>,
         inode_id: u32,
@@ -204,6 +203,17 @@ impl Ext4Inode {
         bg.inode_table_blk_num() as usize * BLOCK_SIZE + (index * inode_size as u32) as usize
     }
 
+    fn read_from_disk(
+        super_block: &Ext4Superblock,
+        block_device: Arc<dyn BlockDevice>,
+        inode_id: u32,
+    ) -> Self {
+        let pos = Ext4Inode::inode_disk_pos(super_block, block_device.clone(), inode_id);
+        let data = block_device.read_offset(pos);
+        let inode_data = &data[..core::mem::size_of::<Ext4Inode>()];
+        Ext4Inode::try_from(inode_data).unwrap()
+    }
+
     fn copy_to_byte_slice(&self, slice: &mut [u8]) {
         unsafe {
             let inode_ptr = self as *const Ext4Inode as *const u8;
@@ -212,7 +222,7 @@ impl Ext4Inode {
         }
     }
 
-    pub fn calc_checksum(&mut self, inode_id: u32, super_block: &Ext4Superblock) -> u32 {
+    fn calc_checksum(&mut self, inode_id: u32, super_block: &Ext4Superblock) -> u32 {
         let inode_size = super_block.inode_size();
 
         let ino_index = inode_id as u32;
@@ -245,7 +255,7 @@ impl Ext4Inode {
         checksum
     }
 
-    pub fn set_checksum(&mut self, super_block: &Ext4Superblock, inode_id: u32) {
+    fn set_checksum(&mut self, super_block: &Ext4Superblock, inode_id: u32) {
         let inode_size = super_block.inode_size();
         let checksum = self.calc_checksum(inode_id, super_block);
 
@@ -255,13 +265,13 @@ impl Ext4Inode {
         }
     }
 
-    pub fn sync_to_disk(
+    fn sync_to_disk_without_csum(
         &self,
         block_device: Arc<dyn BlockDevice>,
         super_block: &Ext4Superblock,
         inode_id: u32,
     ) -> Result<()> {
-        let disk_pos = self.get_inode_disk_pos(super_block, block_device.clone(), inode_id);
+        let disk_pos = Self::inode_disk_pos(super_block, block_device.clone(), inode_id);
         let data = unsafe {
             core::slice::from_raw_parts(self as *const _ as *const u8, size_of::<Ext4Inode>())
         };
@@ -270,18 +280,18 @@ impl Ext4Inode {
         Ok(())
     }
 
-    pub fn sync_to_disk_with_csum(
+    fn sync_to_disk_with_csum(
         &mut self,
         block_device: Arc<dyn BlockDevice>,
         super_block: &Ext4Superblock,
         inode_id: u32,
     ) -> Result<()> {
         self.set_checksum(super_block, inode_id);
-        self.sync_to_disk(block_device, super_block, inode_id)
+        self.sync_to_disk_without_csum(block_device, super_block, inode_id)
     }
 }
 
-/// A reference to an inode in the ext4 filesystem.
+/// A combination of an `Ext4Inode` and its id
 #[derive(Default)]
 pub struct Ext4InodeRef {
     pub inode_id: u32,
@@ -291,5 +301,34 @@ pub struct Ext4InodeRef {
 impl Ext4InodeRef {
     pub fn new(inode_id: u32, inode: Ext4Inode) -> Self {
         Self { inode_id, inode }
+    }
+
+    pub fn read_from_disk(
+        block_device: Arc<dyn BlockDevice>,
+        super_block: &Ext4Superblock,
+        inode_id: u32,
+    ) -> Self {
+        Self::new(
+            inode_id,
+            Ext4Inode::read_from_disk(super_block, block_device, inode_id),
+        )
+    }
+
+    pub fn sync_to_disk_without_csum(
+        &self,
+        block_device: Arc<dyn BlockDevice>,
+        super_block: &Ext4Superblock,
+    ) -> Result<()> {
+        self.inode
+            .sync_to_disk_without_csum(block_device, super_block, self.inode_id)
+    }
+
+    pub fn sync_to_disk_with_csum(
+        &mut self,
+        block_device: Arc<dyn BlockDevice>,
+        super_block: &Ext4Superblock,
+    ) -> Result<()> {
+        self.inode
+            .sync_to_disk_with_csum(block_device, super_block, self.inode_id)
     }
 }

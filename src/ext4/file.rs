@@ -90,9 +90,9 @@ impl Ext4 {
                     return_errno_with_message!(Errnum::ELINKFIAL, "link fail");
                 }
 
-                self.write_back_inode(&mut search_parent);
-                self.write_back_inode(&mut child_inode_ref);
-                self.write_back_inode(parent_inode);
+                self.write_back_inode_with_csum(&mut search_parent);
+                self.write_back_inode_with_csum(&mut child_inode_ref);
+                self.write_back_inode_with_csum(parent_inode);
 
                 continue;
             }
@@ -219,10 +219,10 @@ impl Ext4 {
                 .write_offset(offset, &data[idx..(idx + BLOCK_SIZE as usize)]);
         }
         // inode_ref.inner.inode.size = fblock_count as u32 * BLOCK_SIZE as u32;
-        self.write_back_inode(&mut inode_ref);
+        self.write_back_inode_with_csum(&mut inode_ref);
         // let mut inode_ref = Ext4InodeRef::get_inode_ref(self.self_ref.clone(), ext4_file.inode);
         let mut root_inode_ref = self.get_root_inode_ref();
-        self.write_back_inode(&mut root_inode_ref);
+        self.write_back_inode_with_csum(&mut root_inode_ref);
     }
 
     pub fn ext4_file_remove(&self, _path: &str) -> Result<usize> {

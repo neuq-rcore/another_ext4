@@ -22,7 +22,7 @@ pub fn ext4_bmap_bit_set(bmap: &mut [u8], bit: u32) {
     bmap[(bit >> 3) as usize] |= 1 << (bit & 7);
 }
 
-// 查找位图中第一个为0的位
+/// 查找位图中第一个为0的位
 pub fn ext4_bmap_bit_find_clr(bmap: &[u8], sbit: u32, ebit: u32, bit_id: &mut u32) -> bool {
     let mut i: u32;
     let mut bcnt = ebit - sbit;
