@@ -102,7 +102,7 @@ impl Ext4 {
         let el = BLOCK_SIZE - size_of::<Ext4DirEntryTail>();
         self.ext4_dir_write_entry(&mut new_entry, el as u16, &child, path, len);
 
-        copy_dir_entry_to_array(&new_entry, &mut ext4_block.block_data, 0);
+        new_entry.copy_to_byte_slice(&mut ext4_block.block_data, 0);
 
         // init tail
         let ptr = ext4_block.block_data.as_mut_ptr();
@@ -118,7 +118,7 @@ impl Ext4 {
         tail.ext4_dir_set_csum(&self.super_block, &new_entry, &ext4_block.block_data[..]);
 
         let tail_offset = BLOCK_SIZE - size_of::<Ext4DirEntryTail>();
-        copy_diren_tail_to_array(&tail, &mut ext4_block.block_data, tail_offset);
+        tail.copy_to_byte_slice(&mut ext4_block.block_data, tail_offset);
 
         tail.ext4_dir_set_csum(&self.super_block, &new_entry, &ext4_block.block_data[..]);
 
@@ -178,8 +178,8 @@ impl Ext4 {
                     );
 
                     // update parent new_de to blk_data
-                    copy_dir_entry_to_array(&de, &mut dst_blk.block_data, offset);
-                    copy_dir_entry_to_array(&new_entry, &mut dst_blk.block_data, offset + sz);
+                    de.copy_to_byte_slice(&mut dst_blk.block_data, offset);
+                    new_entry.copy_to_byte_slice(&mut dst_blk.block_data, offset + sz);
 
                     // set tail csum
                     let mut tail =
@@ -191,7 +191,7 @@ impl Ext4 {
                     tail.ext4_dir_set_csum(&self.super_block, &parent_de, &dst_blk.block_data[..]);
 
                     let tail_offset = BLOCK_SIZE - size_of::<Ext4DirEntryTail>();
-                    copy_diren_tail_to_array(&tail, &mut dst_blk.block_data, tail_offset);
+                    tail.copy_to_byte_slice(&mut dst_blk.block_data, tail_offset);
 
                     // sync to disk
                     dst_blk.sync_blk_to_disk(block_device.clone());

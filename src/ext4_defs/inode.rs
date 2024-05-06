@@ -1,10 +1,11 @@
 //! # The Defination of Ext4 Inode Table Entry
 //!
-//! The inode table is a linear array of struct ext4_inode. The table is sized to have
-//! enough blocks to store at least sb.s_inode_size * sb.s_inodes_per_group bytes.
+//! The inode table is a linear array of struct `Ext4Inode`. The table is sized to have
+//! enough blocks to store at least `sb.inode_size * sb.inodes_per_group` bytes.
+//!
 //! The number of the block group containing an inode can be calculated as
-//! (inode_number - 1) / sb.s_inodes_per_group, and the offset into the group's table is
-//! (inode_number - 1) % sb.s_inodes_per_group. There is no inode 0.
+//! `(inode_number - 1) / sb.inodes_per_group`, and the offset into the group's table is
+//! `(inode_number - 1) % sb.inodes_per_group`. There is no inode 0.
 
 use super::crc::*;
 use super::BlockDevice;
@@ -156,11 +157,11 @@ impl Ext4Inode {
 
     pub fn extent_tree_init(&mut self) {
         let mut header = Ext4ExtentHeader::default();
-        header.ext4_extent_header_set_depth(0);
-        header.ext4_extent_header_set_entries_count(0);
-        header.ext4_extent_header_set_generation(0);
-        header.ext4_extent_header_set_magic();
-        header.ext4_extent_header_set_max_entries_count(4 as u16);
+        header.set_depth(0);
+        header.set_entries_count(0);
+        header.set_generation(0);
+        header.set_magic();
+        header.set_max_entries_count(4 as u16);
 
         unsafe {
             let header_ptr = &header as *const Ext4ExtentHeader as *const u32;
@@ -177,11 +178,17 @@ impl Ext4Inode {
         blocks
     }
 
-    // pub fn ext4_inode_set_blocks_count(&mut self, inode_blocks: u64){
-    //     self.blocks = inode_blocks as u32;
-    //     self.osd2.l_i_blocks_high = (inode_blocks >> 32) as u16;
-    // }
-
+    /// Find the position of an inode in the block device.
+    ///
+    /// Each block group contains sb->s_inodes_per_group inodes.
+    /// Because inode 0 is defined not to exist, this formula can
+    /// be used to find the block group that an inode lives in:
+    /// `bg = (inode_id - 1) / sb.inodes_per_group`.
+    ///
+    /// The particular inode can be found within the block group's
+    /// inode table at `index = (inode_id - 1) % sb.inodes_per_group`.
+    /// To get the byte address within the inode table, use
+    /// `offset = index * sb.inode_size`.
     pub fn get_inode_disk_pos(
         &self,
         super_block: &Ext4Superblock,
@@ -194,12 +201,7 @@ impl Ext4Inode {
         let index = (inode_id - 1) % inodes_per_group;
 
         let bg = Ext4BlockGroupDesc::load(block_device, super_block, group as usize).unwrap();
-
-        let inode_table_blk_num = ((bg.inode_table_first_block_hi() as u64) << 32)
-            | bg.inode_table_first_block_lo() as u64;
-        let offset =
-            inode_table_blk_num as usize * BLOCK_SIZE + (index * inode_size as u32) as usize;
-        offset
+        bg.inode_table_blk_num() as usize * BLOCK_SIZE + (index * inode_size as u32) as usize
     }
 
     fn copy_to_byte_slice(&self, slice: &mut [u8]) {

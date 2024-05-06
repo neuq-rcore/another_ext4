@@ -23,7 +23,7 @@ impl Ext4 {
             let mut bg =
                 Ext4BlockGroupDesc::load(block_device.clone(), &super_block, bgid as usize).unwrap();
 
-            let mut free_inodes = bg.get_free_inodes_count();
+            let mut free_inodes = bg.free_inodes_count();
             let mut used_dirs = bg.get_used_dirs_count(&super_block);
 
             if free_inodes > 0 {

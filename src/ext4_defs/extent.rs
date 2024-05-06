@@ -1,3 +1,18 @@
+//! The Defination of Ext4 Extent (Header, Index)
+//! 
+//! Extents are arranged as a tree. Each node of the tree begins with a struct
+//! [`Ext4ExtentHeader`]. 
+//! 
+//! If the node is an interior node (eh.depth > 0), the header is followed by
+//! eh.entries_count instances of struct [`Ext4ExtentIndex`]; each of these index 
+//! entries points to a block containing more nodes in the extent tree. 
+//! 
+//! If the node is a leaf node (eh.depth == 0), then the header is followed by
+//! eh.entries_count instances of struct [`Ext4Extent`]; these instances point 
+//! to the file's data blocks. The root node of the extent tree is stored in 
+//! inode.i_block, which allows for the first four extents to be recorded without 
+//! the use of extra metadata blocks.
+
 use super::Ext4Inode;
 use crate::constants::*;
 use crate::prelude::*;
@@ -36,17 +51,17 @@ impl<T> TryFrom<&[T]> for Ext4ExtentHeader {
 
 impl Ext4ExtentHeader {
     // 获取extent header的魔数
-    pub fn get_magic(&self) -> u16 {
+    pub fn magic(&self) -> u16 {
         self.magic
     }
 
     // 设置extent header的魔数
-    pub fn set_magic(&mut self, magic: u16) {
-        self.magic = magic;
+    pub fn set_magic(&mut self) {
+        self.magic = EXT4_EXTENT_MAGIC;
     }
 
     // 获取extent header的条目数
-    pub fn get_entries_count(&self) -> u16 {
+    pub fn entries_count(&self) -> u16 {
         self.entries_count
     }
 
@@ -56,7 +71,7 @@ impl Ext4ExtentHeader {
     }
 
     // 获取extent header的最大条目数
-    pub fn get_max_entries_count(&self) -> u16 {
+    pub fn max_entries_count(&self) -> u16 {
         self.max_entries_count
     }
 
@@ -66,7 +81,7 @@ impl Ext4ExtentHeader {
     }
 
     // 获取extent header的深度
-    pub fn get_depth(&self) -> u16 {
+    pub fn depth(&self) -> u16 {
         self.depth
     }
 
@@ -76,34 +91,13 @@ impl Ext4ExtentHeader {
     }
 
     // 获取extent header的生成号
-    pub fn get_generation(&self) -> u32 {
+    pub fn generation(&self) -> u32 {
         self.generation
     }
 
     // 设置extent header的生成号
     pub fn set_generation(&mut self, generation: u32) {
         self.generation = generation;
-    }
-
-    pub fn ext4_extent_header_depth(&self) -> u16 {
-        self.depth
-    }
-
-    pub fn ext4_extent_header_set_depth(&mut self, depth: u16) {
-        self.depth = depth;
-    }
-    pub fn ext4_extent_header_set_entries_count(&mut self, entries_count: u16) {
-        self.entries_count = entries_count;
-    }
-    pub fn ext4_extent_header_set_generation(&mut self, generation: u32) {
-        self.generation = generation;
-    }
-    pub fn ext4_extent_header_set_magic(&mut self) {
-        self.magic = EXT4_EXTENT_MAGIC;
-    }
-
-    pub fn ext4_extent_header_set_max_entries_count(&mut self, max_entries_count: u16) {
-        self.max_entries_count = max_entries_count;
     }
 }
 

@@ -1,17 +1,17 @@
 //！# The Defination of Ext4 Block Group Description
-//! 
+//!
 //! Block Group Descriptor is the second field of Ext4 Block Group.
-//! 
-//! | Super Block | Group Descriptor | Reserved GDT Blocks | Block Bitmap |
-//! | Inode Bitmap | Inode Table | Data Blocks |
-//! 
+//!
+//! | Super Block | Group Descriptor | Reserved GDT Blocks |
+//! | Block Bitmap | Inode Bitmap | Inode Table | Data Blocks |
+//!
 //! See [`super`] for more information.
 
-use crate::constants::*;
-use crate::prelude::*;
 use super::crc::*;
 use super::BlockDevice;
 use super::Ext4Superblock;
+use crate::constants::*;
+use crate::prelude::*;
 
 #[derive(Debug, Default, Clone, Copy)]
 #[repr(C, packed)]
@@ -136,15 +136,15 @@ impl Ext4BlockGroupDesc {
         self.inode_table_first_block_lo
     }
 
-    pub fn get_free_inodes_count(&self) -> u32 {
-        ((self.free_inodes_count_hi as u64) << 32) as u32 | self.free_inodes_count_lo as u32
+    pub fn free_inodes_count(&self) -> u32 {
+        ((self.free_inodes_count_hi as u32) << 16) | self.free_inodes_count_lo as u32
     }
 
-    pub fn get_inode_table_blk_num(&self) -> u32 {
-        ((self.inode_table_first_block_hi as u64) << 32) as u32 | self.inode_table_first_block_lo
+    pub fn inode_table_blk_num(&self) -> u64 {
+        ((self.inode_table_first_block_hi as u64) << 32) | self.inode_table_first_block_lo as u64
     }
 
-    pub fn sync_block_group_to_disk(
+    pub fn sync_to_disk(
         &self,
         block_device: Arc<dyn BlockDevice>,
         bgid: usize,
@@ -159,12 +159,15 @@ impl Ext4BlockGroupDesc {
         let offset = (bgid % dsc_cnt) * super_block.desc_size() as usize;
 
         let data = unsafe {
-            core::slice::from_raw_parts(self as *const _ as *const u8, size_of::<Ext4BlockGroupDesc>())
+            core::slice::from_raw_parts(
+                self as *const _ as *const u8,
+                size_of::<Ext4BlockGroupDesc>(),
+            )
         };
         block_device.write_offset(block_id * BLOCK_SIZE + offset, data);
     }
 
-    pub fn get_block_group_checksum(&mut self, bgid: u32, super_block: &Ext4Superblock) -> u16 {
+    pub fn calc_checksum(&mut self, bgid: u32, super_block: &Ext4Superblock) -> u16 {
         let desc_size = super_block.desc_size();
 
         let orig_checksum = self.checksum;
@@ -197,7 +200,7 @@ impl Ext4BlockGroupDesc {
     }
 
     pub fn set_block_group_checksum(&mut self, bgid: u32, super_block: &Ext4Superblock) {
-        let csum = self.get_block_group_checksum(bgid, super_block);
+        let csum = self.calc_checksum(bgid, super_block);
         self.checksum = csum;
     }
 
@@ -208,7 +211,7 @@ impl Ext4BlockGroupDesc {
         super_block: &Ext4Superblock,
     ) {
         self.set_block_group_checksum(bgid as u32, super_block);
-        self.sync_block_group_to_disk(block_device, bgid, super_block)
+        self.sync_to_disk(block_device, bgid, super_block)
     }
 
     pub fn set_block_group_ialloc_bitmap_csum(&mut self, s: &Ext4Superblock, bitmap: &[u8]) {

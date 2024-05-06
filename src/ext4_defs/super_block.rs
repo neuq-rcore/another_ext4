@@ -154,6 +154,7 @@ impl Ext4Superblock {
     }
     
     /// Returns the number of block groups.
+    /// FIXME: This function is not correct.
     pub fn block_groups_count(&self) -> u32 {
         (((self.blocks_count_hi.to_le() as u64) << 32) as u32 | self.blocks_count_lo)
         / self.blocks_per_group

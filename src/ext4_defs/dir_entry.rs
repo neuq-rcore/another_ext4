@@ -1,3 +1,8 @@
+//! # The Defination of Ext4 Directory Entry
+//!
+//! A directory is a series of data blocks and that each block contains a
+//! linear array of directory entries.
+
 use super::crc::*;
 use super::BlockDevice;
 use super::Ext4Block;
@@ -62,19 +67,18 @@ impl<T> TryFrom<&[T]> for Ext4DirEntry {
 }
 
 impl Ext4DirEntry {
-    pub fn get_name(&self) -> String {
+    pub fn name(&self) -> String {
         let name_len = self.name_len as usize;
         let name = &self.name[..name_len];
         let name = core::str::from_utf8(name).unwrap();
         name.to_string()
     }
 
-    pub fn get_name_len(&self) -> usize {
-        let name_len = self.name_len as usize;
-        name_len
+    pub fn name_len(&self) -> usize {
+        self.name_len as usize
     }
 
-    pub fn ext4_dir_get_csum(&self, s: &Ext4Superblock, blk_data: &[u8]) -> u32 {
+    pub fn calc_csum(&self, s: &Ext4Superblock, blk_data: &[u8]) -> u32 {
         let ino_index = self.inode;
         let ino_gen = 0 as u32;
 
@@ -91,7 +95,7 @@ impl Ext4DirEntry {
         csum
     }
 
-    pub fn write_de_to_blk(&self, dst_blk: &mut Ext4Block, offset: usize) {
+    pub fn write_to_blk(&self, dst_blk: &mut Ext4Block, offset: usize) {
         let count = core::mem::size_of::<Ext4DirEntry>() / core::mem::size_of::<u8>();
         let data = unsafe { core::slice::from_raw_parts(self as *const _ as *const u8, count) };
         dst_blk.block_data.splice(
@@ -100,23 +104,14 @@ impl Ext4DirEntry {
         );
         // assert_eq!(dst_blk.block_data[offset..offset + core::mem::size_of::<Ext4DirEntry>()], data[..]);
     }
-}
 
-pub fn copy_dir_entry_to_array(header: &Ext4DirEntry, array: &mut [u8], offset: usize) {
-    unsafe {
-        let de_ptr = header as *const Ext4DirEntry as *const u8;
-        let array_ptr = array as *mut [u8] as *mut u8;
-        let count = core::mem::size_of::<Ext4DirEntry>() / core::mem::size_of::<u8>();
-        core::ptr::copy_nonoverlapping(de_ptr, array_ptr.add(offset), count);
-    }
-}
-
-pub fn copy_diren_tail_to_array(dir_en: &Ext4DirEntryTail, array: &mut [u8], offset: usize) {
-    unsafe {
-        let de_ptr = dir_en as *const Ext4DirEntryTail as *const u8;
-        let array_ptr = array as *mut [u8] as *mut u8;
-        let count = core::mem::size_of::<Ext4DirEntryTail>();
-        core::ptr::copy_nonoverlapping(de_ptr, array_ptr.add(offset), count);
+    pub fn copy_to_byte_slice(&self, slice: &mut [u8], offset: usize) {
+        let de_ptr = self as *const Ext4DirEntry as *const u8;
+        let slice_ptr = slice as *mut [u8] as *mut u8;
+        let count = core::mem::size_of::<Ext4DirEntry>();
+        unsafe {
+            core::ptr::copy_nonoverlapping(de_ptr, slice_ptr.add(offset), count);
+        }
     }
 }
 
@@ -153,8 +148,7 @@ impl Ext4DirEntryTail {
     }
 
     pub fn ext4_dir_set_csum(&mut self, s: &Ext4Superblock, diren: &Ext4DirEntry, blk_data: &[u8]) {
-        let csum = diren.ext4_dir_get_csum(s, blk_data);
-        self.checksum = csum;
+        self.checksum = diren.calc_csum(s, blk_data);
     }
 
     #[allow(unused)]
@@ -197,14 +191,14 @@ impl Ext4DirEntryTail {
             &dst_blk.block_data,
         );
     }
-}
 
-#[allow(unused)]
-pub fn copy_diren_to_array(diren: &Ext4DirEntry, array: &mut [u8]) {
-    unsafe {
-        let diren_ptr = diren as *const Ext4DirEntry as *const u8;
-        let array_ptr = array as *mut [u8] as *mut u8;
-        core::ptr::copy_nonoverlapping(diren_ptr, array_ptr, core::mem::size_of::<Ext4DirEntry>());
+    pub fn copy_to_byte_slice(&self, slice: &mut [u8], offset: usize) {
+        let de_ptr = self as *const Ext4DirEntryTail as *const u8;
+        let slice_ptr = slice as *mut [u8] as *mut u8;
+        let count = core::mem::size_of::<Ext4DirEntryTail>();
+        unsafe {
+            core::ptr::copy_nonoverlapping(de_ptr, slice_ptr.add(offset), count);
+        }
     }
 }
 
