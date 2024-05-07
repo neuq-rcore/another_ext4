@@ -17,7 +17,7 @@ pub struct Ext4Block<'a> {
 }
 
 impl<'a> Ext4Block<'a> {
-    pub fn sync_blk_to_disk(&self, block_device: Arc<dyn BlockDevice>) {
+    pub fn sync_to_disk(&self, block_device: Arc<dyn BlockDevice>) {
         let block_id = self.disk_block_id as usize;
         block_device.write_offset(block_id * BLOCK_SIZE, &self.block_data);
     }

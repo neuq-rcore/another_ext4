@@ -87,19 +87,6 @@ pub fn ext4_path_check(path: &str, is_goal: &mut bool) -> usize {
     return path.len();
 }
 
-// A function that takes a &str and returns a &[char]
-pub fn get_name(
-    name: [u8; 255],
-    len: usize,
-) -> core::result::Result<String, alloc::string::FromUtf8Error> {
-    let mut v: Vec<u8> = Vec::new();
-    for i in 0..len {
-        v.push(name[i]);
-    }
-    let s = String::from_utf8(v);
-    s
-}
-
 // 使用libc库定义的常量
 pub fn ext4_parse_flags(flags: &str) -> Result<u32> {
     match flags {

@@ -4,16 +4,16 @@
 //! linear array of directory entries.
 
 use super::crc::*;
-use super::BlockDevice;
 use super::Ext4Block;
 use super::Ext4Superblock;
 use crate::constants::*;
 use crate::prelude::*;
+use alloc::string::FromUtf8Error;
 
 #[repr(C)]
 pub union Ext4DirEnInner {
-    pub name_length_high: u8, // 高8位的文件名长度
-    pub inode_type: u8,       // 引用的inode的类型（在rev >= 0.5中）
+    pub name_length_high: u8,     // 高8位的文件名长度
+    pub inode_type: FileType, // 引用的inode的类型（在rev >= 0.5中）
 }
 
 impl Debug for Ext4DirEnInner {
@@ -39,18 +39,18 @@ impl Default for Ext4DirEnInner {
 #[repr(C)]
 #[derive(Debug)]
 pub struct Ext4DirEntry {
-    pub inode: u32,            // 该目录项指向的inode的编号
-    pub entry_len: u16,        // 到下一个目录项的距离
-    pub name_len: u8,          // 低8位的文件名长度
-    pub inner: Ext4DirEnInner, // 联合体成员
-    pub name: [u8; 255],       // 文件名
+    inode: u32,            // 该目录项指向的inode的编号
+    rec_len: u16,          // 到下一个目录项的距离
+    name_len: u8,          // 低8位的文件名长度
+    inner: Ext4DirEnInner, // 联合体成员
+    name: [u8; 255],       // 文件名
 }
 
 impl Default for Ext4DirEntry {
     fn default() -> Self {
         Self {
             inode: 0,
-            entry_len: 0,
+            rec_len: 0,
             name_len: 0,
             inner: Ext4DirEnInner::default(),
             name: [0; 255],
@@ -67,15 +67,56 @@ impl<T> TryFrom<&[T]> for Ext4DirEntry {
 }
 
 impl Ext4DirEntry {
-    pub fn name(&self) -> String {
+    pub fn name(&self) -> core::result::Result<String, FromUtf8Error> {
         let name_len = self.name_len as usize;
         let name = &self.name[..name_len];
-        let name = core::str::from_utf8(name).unwrap();
-        name.to_string()
+        String::from_utf8(name.to_vec())
     }
 
-    pub fn name_len(&self) -> usize {
-        self.name_len as usize
+    pub fn compare_name(&self, name: &str) -> bool {
+        &self.name[..name.len()] == name.as_bytes()
+    }
+
+    pub fn set_name(&mut self, name: &str) {
+        self.name_len = name.len() as u8;
+        self.name[..name.len()].copy_from_slice(name.as_bytes());
+    }
+
+    pub fn rec_len(&self) -> u16 {
+        self.rec_len
+    }
+
+    pub fn set_rec_len(&mut self, len: u16) {
+        self.rec_len = len;
+    }
+
+    pub fn inode(&self) -> u32 {
+        self.inode
+    }
+
+    pub fn set_inode(&mut self, inode: u32) {
+        self.inode = inode;
+    }
+
+    /// Unused directory entries are signified by inode = 0
+    pub fn unused(&self) -> bool {
+        self.inode == 0
+    }
+
+    /// Set the dir entry's inode type given the corresponding inode mode
+    pub fn set_entry_type(&mut self, inode_mode: u16) {
+        self.inner.inode_type = inode_mode2file_type(inode_mode);
+    }
+
+    /// Get the required size to save this directory entry, 4-byte aligned
+    pub fn required_size(name_len: usize) -> usize {
+        // u32 + u16 + u8 + Ext4DirEnInner + name -> align to 4
+        (core::mem::size_of::<Ext4FakeDirEntry>() + name_len + 3) / 4 * 4
+    }
+
+    /// Get the used size of this directory entry, 4-bytes alighed
+    pub fn used_size(&self) -> usize {
+        Self::required_size(self.name_len as usize)
     }
 
     pub fn calc_csum(&self, s: &Ext4Superblock, blk_data: &[u8]) -> u32 {
@@ -116,7 +157,7 @@ impl Ext4DirEntry {
 }
 
 #[repr(C)]
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Default)]
 pub struct Ext4DirEntryTail {
     pub reserved_zero1: u32,
     pub rec_len: u16,
@@ -147,49 +188,8 @@ impl Ext4DirEntryTail {
         }
     }
 
-    pub fn ext4_dir_set_csum(&mut self, s: &Ext4Superblock, diren: &Ext4DirEntry, blk_data: &[u8]) {
+    pub fn set_csum(&mut self, s: &Ext4Superblock, diren: &Ext4DirEntry, blk_data: &[u8]) {
         self.checksum = diren.calc_csum(s, blk_data);
-    }
-
-    #[allow(unused)]
-    pub fn write_de_tail_to_blk(&self, dst_blk: &mut Ext4Block, offset: usize) {
-        let data = unsafe { core::slice::from_raw_parts(self as *const _ as *const u8, 0x20) };
-        dst_blk.block_data.splice(
-            offset..offset + core::mem::size_of::<Ext4DirEntryTail>(),
-            data.iter().cloned(),
-        );
-        assert_eq!(
-            dst_blk.block_data[offset..offset + core::mem::size_of::<Ext4DirEntryTail>()],
-            data[..]
-        );
-    }
-
-    #[allow(unused)]
-    pub fn sync_de_tail_to_disk(
-        &self,
-        block_device: Arc<dyn BlockDevice>,
-        dst_blk: &mut Ext4Block,
-    ) {
-        let offset = BASE_OFFSET as usize - core::mem::size_of::<Ext4DirEntryTail>();
-
-        let data = unsafe {
-            core::slice::from_raw_parts(
-                self as *const _ as *const u8,
-                core::mem::size_of::<Ext4DirEntryTail>(),
-            )
-        };
-        dst_blk.block_data.splice(
-            offset..offset + core::mem::size_of::<Ext4DirEntryTail>(),
-            data.iter().cloned(),
-        );
-        assert_eq!(
-            dst_blk.block_data[offset..offset + core::mem::size_of::<Ext4DirEntryTail>()],
-            data[..]
-        );
-        block_device.write_offset(
-            dst_blk.disk_block_id as usize * BLOCK_SIZE,
-            &dst_blk.block_data,
-        );
     }
 
     pub fn copy_to_byte_slice(&self, slice: &mut [u8], offset: usize) {
@@ -213,7 +213,7 @@ impl<'a> Ext4DirSearchResult<'a> {
     }
 }
 
-/// fake dir entry
+/// Fake dir entry. A normal entry without `name` field`
 #[repr(C)]
 pub struct Ext4FakeDirEntry {
     inode: u32,
@@ -222,33 +222,43 @@ pub struct Ext4FakeDirEntry {
     inode_type: u8,
 }
 
-bitflags! {
-    #[derive(PartialEq, Eq)]
-    pub struct DirEntryType: u8 {
-        const EXT4_DE_UNKNOWN = 0;
-        const EXT4_DE_REG_FILE = 1;
-        const EXT4_DE_DIR = 2;
-        const EXT4_DE_CHRDEV = 3;
-        const EXT4_DE_BLKDEV = 4;
-        const EXT4_DE_FIFO = 5;
-        const EXT4_DE_SOCK = 6;
-        const EXT4_DE_SYMLINK = 7;
+#[derive(PartialEq, Eq, Clone, Copy, Debug)]
+#[repr(u8)]
+pub enum FileType {
+    Unknown,
+    RegularFile,
+    Directory,
+    CharacterDev,
+    BlockDev,
+    Fifo,
+    Socket,
+    SymLink,
+}
+
+pub fn inode_mode2file_type(inode_mode: u16) -> FileType {
+    let file_type = (inode_mode & EXT4_INODE_MODE_TYPE_MASK) as usize;
+    match file_type {
+        EXT4_INODE_MODE_FILE => FileType::RegularFile,
+        EXT4_INODE_MODE_DIRECTORY => FileType::Directory,
+        EXT4_INODE_MODE_CHARDEV => FileType::CharacterDev,
+        EXT4_INODE_MODE_BLOCKDEV => FileType::BlockDev,
+        EXT4_INODE_MODE_FIFO => FileType::Fifo,
+        EXT4_INODE_MODE_SOCKET => FileType::Socket,
+        EXT4_INODE_MODE_SOFTLINK => FileType::SymLink,
+        _ => FileType::Unknown,
     }
 }
 
-pub fn ext4_fs_correspond_inode_mode(filetype: u8) -> u32 {
-    let file_type = DirEntryType::from_bits(filetype).unwrap();
-    match file_type {
-        DirEntryType::EXT4_DE_DIR => EXT4_INODE_MODE_DIRECTORY as u32,
-        DirEntryType::EXT4_DE_REG_FILE => EXT4_INODE_MODE_FILE as u32,
-        DirEntryType::EXT4_DE_SYMLINK => EXT4_INODE_MODE_SOFTLINK as u32,
-        DirEntryType::EXT4_DE_CHRDEV => EXT4_INODE_MODE_CHARDEV as u32,
-        DirEntryType::EXT4_DE_BLKDEV => EXT4_INODE_MODE_BLOCKDEV as u32,
-        DirEntryType::EXT4_DE_FIFO => EXT4_INODE_MODE_FIFO as u32,
-        DirEntryType::EXT4_DE_SOCK => EXT4_INODE_MODE_SOCKET as u32,
-        _ => {
-            // FIXME: unsupported filetype
-            EXT4_INODE_MODE_FILE as u32
-        }
-    }
+pub fn file_type2inode_mode(dirent_type: FileType) -> u16 {
+    let inode_mode = match dirent_type {
+        FileType::RegularFile => EXT4_INODE_MODE_FILE,
+        FileType::Directory => EXT4_INODE_MODE_DIRECTORY,
+        FileType::SymLink => EXT4_INODE_MODE_SOFTLINK,
+        FileType::CharacterDev => EXT4_INODE_MODE_CHARDEV,
+        FileType::BlockDev => EXT4_INODE_MODE_BLOCKDEV,
+        FileType::Fifo => EXT4_INODE_MODE_FIFO,
+        FileType::Socket => EXT4_INODE_MODE_SOCKET,
+        _ => EXT4_INODE_MODE_FILE,
+    };
+    inode_mode as u16
 }

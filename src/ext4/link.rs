@@ -8,11 +8,10 @@ impl Ext4 {
         parent: &mut Ext4InodeRef,
         child: &mut Ext4InodeRef,
         name: &str,
-        name_len: u32,
     ) -> usize {
         // log::info!("link parent inode {:x?} child inode {:x?} name {:?}", parent.inode_num, child.inode_num, name);
         /* Add entry to parent directory */
-        let _r = self.ext4_dir_add_entry(parent, child, name, name_len);
+        let _r = self.dir_add_entry(parent, child, name);
     
         /* Fill new dir -> add '.' and '..' entries.
          * Also newly allocated inode should have 0 link count.
@@ -29,10 +28,10 @@ impl Ext4 {
             child_inode_ref.inode_id = child.inode_id;
             child_inode_ref.inode = child.inode.clone();
     
-            let _r = self.ext4_dir_add_entry(&mut child_inode_ref, child, ".", 1);
+            let _r = self.dir_add_entry(&mut child_inode_ref, child, ".");
             child.inode.size = child_inode_ref.inode.size;
             child.inode.block = child_inode_ref.inode.block;
-            let _r = self.ext4_dir_add_entry(&mut child_inode_ref, parent, "..", 2);
+            let _r = self.dir_add_entry(&mut child_inode_ref, parent, "..");
     
             child.inode.links_count = 2;
             parent.inode.links_count += 1;

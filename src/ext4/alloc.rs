@@ -208,13 +208,13 @@ impl Ext4 {
         // inode_ref.dirty = true;
     }
     
-    pub fn ext4_fs_alloc_inode(&self, child_inode_ref: &mut Ext4InodeRef, filetype: u8) -> usize {
+    pub fn ext4_fs_alloc_inode(&self, child_inode_ref: &mut Ext4InodeRef, filetype: FileType) -> usize {
         let mut is_dir = false;
     
         let inode_size = self.super_block.inode_size();
         let extra_size = self.super_block.extra_size();
-    
-        if filetype == DirEntryType::EXT4_DE_DIR.bits() {
+
+        if filetype == FileType::Directory {
             is_dir = true;
         }
     
@@ -229,10 +229,10 @@ impl Ext4 {
     
         let mode = if is_dir {
             0o777 | EXT4_INODE_MODE_DIRECTORY as u16
-        } else if filetype == 0x7 {
+        } else if filetype == FileType::SymLink {
             0o777 | EXT4_INODE_MODE_SOFTLINK as u16
         } else {
-            let t = ext4_fs_correspond_inode_mode(filetype);
+            let t = file_type2inode_mode(filetype);
             // log::info!("ext4_fs_correspond_inode_mode {:x?}", ext4_fs_correspond_inode_mode(filetype));
             0o666 | t as u16
         };

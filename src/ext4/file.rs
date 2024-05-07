@@ -11,7 +11,7 @@ impl Ext4 {
         file: &mut Ext4File,
         path: &str,
         iflags: u32,
-        ftype: u8,
+        ftype: FileType,
         parent_inode: &mut Ext4InodeRef,
     ) -> Result<usize> {
         let mut is_goal = false;
@@ -43,10 +43,9 @@ impl Ext4 {
             search_path = ext4_path_skip(search_path, "/");
             len = ext4_path_check(search_path, &mut is_goal);
 
-            let r = self.ext4_dir_find_entry(
+            let r = self.dir_find_entry(
                 &mut search_parent,
                 &search_path[..len as usize],
-                len as u32,
                 &mut dir_search_result,
             );
 
@@ -68,7 +67,7 @@ impl Ext4 {
                 let r = if is_goal {
                     self.ext4_fs_alloc_inode(&mut child_inode_ref, ftype)
                 } else {
-                    self.ext4_fs_alloc_inode(&mut child_inode_ref, DirEntryType::EXT4_DE_DIR.bits())
+                    self.ext4_fs_alloc_inode(&mut child_inode_ref, FileType::Directory)
                 };
 
                 if r != EOK {
@@ -82,7 +81,6 @@ impl Ext4 {
                     &mut search_parent,
                     &mut child_inode_ref,
                     &search_path[..len as usize],
-                    len as u32,
                 );
 
                 if r != EOK {
@@ -96,19 +94,13 @@ impl Ext4 {
 
                 continue;
             }
-
-            let _name = get_name(
-                dir_search_result.dentry.name,
-                dir_search_result.dentry.name_len as usize,
-            )
-            .unwrap();
             // log::info!("find de name{:?} de inode {:x?}", name, dir_search_result.dentry.inode);
 
             if is_goal {
-                file.inode = dir_search_result.dentry.inode;
+                file.inode = dir_search_result.dentry.inode();
                 return Ok(EOK);
             } else {
-                search_parent = self.get_inode_ref(dir_search_result.dentry.inode);
+                search_parent = self.get_inode_ref(dir_search_result.dentry.inode());
                 search_path = &search_path[len..];
             }
         }
@@ -130,9 +122,9 @@ impl Ext4 {
 
         // file for dir
         let filetype = if file_expect {
-            DirEntryType::EXT4_DE_REG_FILE
+            FileType::RegularFile
         } else {
-            DirEntryType::EXT4_DE_DIR
+            FileType::Directory
         };
 
         if iflags & O_CREAT != 0 {
@@ -141,7 +133,7 @@ impl Ext4 {
 
         let mut root_inode_ref = self.get_root_inode_ref();
 
-        let r = self.ext4_generic_open(file, path, iflags, filetype.bits(), &mut root_inode_ref);
+        let r = self.ext4_generic_open(file, path, iflags, filetype, &mut root_inode_ref);
 
         r
     }
