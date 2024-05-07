@@ -83,6 +83,16 @@ impl Ext4Inode {
         self.mode |= mode;
     }
 
+    pub fn inode_type(&self, super_block: &Ext4Superblock) -> u32{
+        let mut v = self.mode;
+
+        if super_block.creator_os() == EXT4_SUPERBLOCK_OS_HURD{
+            v |= ((self.osd2.l_i_file_acl_high as u32 ) << 16) as u16;
+        }
+
+        (v & EXT4_INODE_MODE_TYPE_MASK) as u32
+    }
+
     pub fn links_cnt(&self) -> u16 {
         self.links_count
     }

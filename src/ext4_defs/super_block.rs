@@ -133,6 +133,10 @@ impl Ext4Superblock {
         self.features_read_only
     }
 
+    pub fn creator_os(&self) -> u32 {
+        self.creator_os
+    }
+
     /// Returns total number of inodes.
     pub fn total_inodes(&self) -> u32 {
         self.inodes_count

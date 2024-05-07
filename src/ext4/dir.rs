@@ -5,35 +5,6 @@ use crate::ext4_defs::*;
 use crate::prelude::*;
 
 impl Ext4 {
-    pub fn ext4_dir_mk(&self, path: &str) -> Result<usize> {
-        let mut file = Ext4File::new();
-        let flags = "w";
-
-        let filetype = DirEntryType::EXT4_DE_DIR;
-
-        // get mount point
-        let mut ptr = Box::new(self.mount_point.clone());
-        file.mp = Box::as_mut(&mut ptr) as *mut Ext4MountPoint;
-
-        // get open flags
-        let iflags = ext4_parse_flags(flags).unwrap();
-
-        if iflags & O_CREAT != 0 {
-            self.ext4_trans_start();
-        }
-
-        let mut root_inode_ref = self.get_root_inode_ref();
-
-        let r = self.ext4_generic_open(
-            &mut file,
-            path,
-            iflags,
-            filetype.bits(),
-            &mut root_inode_ref,
-        );
-        r
-    }
-
     pub fn ext4_dir_add_entry(
         &self,
         parent: &mut Ext4InodeRef,
@@ -315,5 +286,34 @@ impl Ext4 {
         }
     
         false
+    }
+
+    pub fn ext4_dir_mk(&self, path: &str) -> Result<usize> {
+        let mut file = Ext4File::new();
+        let flags = "w";
+
+        let filetype = DirEntryType::EXT4_DE_DIR;
+
+        // get mount point
+        let mut ptr = Box::new(self.mount_point.clone());
+        file.mp = Box::as_mut(&mut ptr) as *mut Ext4MountPoint;
+
+        // get open flags
+        let iflags = ext4_parse_flags(flags).unwrap();
+
+        if iflags & O_CREAT != 0 {
+            self.ext4_trans_start();
+        }
+
+        let mut root_inode_ref = self.get_root_inode_ref();
+
+        let r = self.ext4_generic_open(
+            &mut file,
+            path,
+            iflags,
+            filetype.bits(),
+            &mut root_inode_ref,
+        );
+        r
     }
 }

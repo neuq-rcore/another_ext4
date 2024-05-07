@@ -118,16 +118,15 @@ impl Ext4 {
         &self,
         file: &mut Ext4File,
         path: &str,
-        // flags: &str,
-        iflags: u32,
+        flags: &str,
         file_expect: bool,
     ) -> Result<usize> {
+        // get open flags
+        let iflags = ext4_parse_flags(flags).unwrap();
+
         // get mount point
         let mut ptr = Box::new(self.mount_point.clone());
         file.mp = Box::as_mut(&mut ptr) as *mut Ext4MountPoint;
-
-        // get open flags
-        // let iflags = self.ext4_parse_flags(flags).unwrap();
 
         // file for dir
         let filetype = if file_expect {
@@ -147,35 +146,108 @@ impl Ext4 {
         r
     }
 
-    pub fn ext4_file_read(&self, ext4_file: &mut Ext4File) -> Vec<u8> {
-        // 创建一个空的向量，用于存储文件的内容
-        let mut file_data: Vec<u8> = Vec::new();
+    #[allow(unused)]
+    pub fn ext4_file_read(
+        &self,
+        ext4_file: &mut Ext4File,
+        read_buf: &mut [u8],
+        size: usize,
+        read_cnt: &mut usize,
+    ) -> Result<usize> {
+        if size == 0 {
+            return Ok(EOK);
+        }
 
-        // 创建一个空的向量，用于存储文件的所有extent信息
-        let mut extents: Vec<Ext4Extent> = Vec::new();
+        let mut inode_ref = self.get_inode_ref(ext4_file.inode);
 
-        let inode_ref = self.get_inode_ref(ext4_file.inode);
+        // sync file size
+        ext4_file.fsize = inode_ref.inode.size();
 
-        self.ext4_find_all_extent(&inode_ref, &mut extents);
+        let is_softlink =
+            inode_ref.inode.inode_type(&self.super_block) == EXT4_INODE_MODE_SOFTLINK as u32;
 
-        // 遍历extents向量，对每个extent，计算它的物理块号，然后调用read_block函数来读取数据块，并将结果追加到file_data向量中
-        for extent in extents {
-            // 获取extent的起始块号、块数和逻辑块号
-            let start_block = extent.start_lo as u64 | ((extent.start_hi as u64) << 32);
-            let block_count = extent.block_count as u64;
-            let logical_block = extent.first_block as u64;
-            // 计算extent的物理块号
-            let physical_block = start_block + logical_block;
-            // 从file中读取extent的所有数据块，并将结果追加到file_data向量中
-            for i in 0..block_count {
-                let block_num = physical_block + i;
+        if is_softlink {
+            log::debug!("ext4_read unsupported softlink");
+        }
+
+        let block_size = BLOCK_SIZE;
+
+        // 计算读取大小
+        let size_to_read = if size > (ext4_file.fsize as usize - ext4_file.fpos) {
+            ext4_file.fsize as usize - ext4_file.fpos
+        } else {
+            size
+        };
+
+        let mut iblock_idx = (ext4_file.fpos / block_size) as u32;
+        let iblock_last = ((ext4_file.fpos + size_to_read) / block_size) as u32;
+        let mut unalg = (ext4_file.fpos % block_size) as u32;
+
+        let mut offset = 0;
+        let mut total_bytes_read = 0;
+
+        if unalg > 0 {
+            let first_block_read_len = core::cmp::min(block_size - unalg as usize, size_to_read);
+            let mut fblock = 0;
+
+            self.ext4_fs_get_inode_dblk_idx(&mut inode_ref, &mut iblock_idx, &mut fblock, false);
+
+            // if r != EOK {
+            //     return Err(Ext4Error::new(r));
+            // }
+
+            if fblock != 0 {
+                let block_offset = fblock * block_size as u64 + unalg as u64;
+                let block_data = self.block_device.read_offset(block_offset as usize);
+
+                // Copy data from block to the user buffer
+                read_buf[offset..offset + first_block_read_len]
+                    .copy_from_slice(&block_data[0..first_block_read_len]);
+            } else {
+                // Handle the unwritten block by zeroing out the respective part of the buffer
+                for x in &mut read_buf[offset..offset + first_block_read_len] {
+                    *x = 0;
+                }
+            }
+
+            offset += first_block_read_len;
+            total_bytes_read += first_block_read_len;
+            ext4_file.fpos += first_block_read_len;
+            *read_cnt += first_block_read_len;
+            iblock_idx += 1;
+        }
+
+        // Continue with full block reads
+        while total_bytes_read < size_to_read {
+            let read_length = core::cmp::min(block_size, size_to_read - total_bytes_read);
+            let mut fblock = 0;
+
+            self.ext4_fs_get_inode_dblk_idx(&mut inode_ref, &mut iblock_idx, &mut fblock, false);
+
+            // if r != EOK {
+            //     return Err(Ext4Error::new(r));
+            // }
+
+            if fblock != 0 {
                 let block_data = self
                     .block_device
-                    .read_offset(block_num as usize * BLOCK_SIZE);
-                file_data.extend(block_data);
+                    .read_offset((fblock * block_size as u64) as usize);
+                read_buf[offset..offset + read_length].copy_from_slice(&block_data[0..read_length]);
+            } else {
+                // Handle the unwritten block by zeroing out the respective part of the buffer
+                for x in &mut read_buf[offset..offset + read_length] {
+                    *x = 0;
+                }
             }
+
+            offset += read_length;
+            total_bytes_read += read_length;
+            ext4_file.fpos += read_length;
+            *read_cnt += read_length;
+            iblock_idx += 1;
         }
-        file_data
+
+        return Ok(EOK);
     }
 
     pub fn ext4_file_write(&self, ext4_file: &mut Ext4File, data: &[u8], size: usize) {
