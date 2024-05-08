@@ -5,6 +5,10 @@ impl<'a> Bitmap<'a> {
         Self(bmap)
     }
 
+    pub fn as_raw(&self) -> &[u8] {
+        self.0
+    }
+
     pub fn is_bit_clear(&self, bit: usize) -> bool {
         self.0[bit / 8] & (1 << (bit % 8)) == 0
     }
@@ -21,13 +25,21 @@ impl<'a> Bitmap<'a> {
         self.0[bit / 8] &= !(1 << (bit % 8));
     }
 
-    /// Find the first clear bit in the range `[start, end)``
-    pub fn find_clear(&self, start: usize, end: usize) -> Option<usize> {
+    /// Find the first clear bit in the range `[start, end)`
+    pub fn first_clear_bit(&self, start: usize, end: usize) -> Option<usize> {
         for i in start..end {
             if self.is_bit_clear(i) {
                 return Some(i);
             }
         }
         None
+    }
+
+    /// Find the first clear bit in the range `[start, end)` and set it if found
+    pub fn find_and_set_first_clear_bit(&mut self, start: usize, end: usize) -> Option<usize> {
+        self.first_clear_bit(start, end).map(|bit| {
+            self.set_bit(bit);
+            bit
+        })
     }
 }

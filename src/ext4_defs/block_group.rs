@@ -8,6 +8,7 @@
 //! See [`super`] for more information.
 
 use super::crc::*;
+use super::Bitmap;
 use super::BlockDevice;
 use super::Ext4Superblock;
 use crate::constants::*;
@@ -128,19 +129,11 @@ impl Ext4BlockGroupDesc {
         }
     }
 
-    pub fn inode_table_first_block_hi(&self) -> u32 {
-        self.inode_table_first_block_hi
-    }
-
-    pub fn inode_table_first_block_lo(&self) -> u32 {
-        self.inode_table_first_block_lo
-    }
-
     pub fn free_inodes_count(&self) -> u32 {
         ((self.free_inodes_count_hi as u32) << 16) | self.free_inodes_count_lo as u32
     }
 
-    pub fn inode_table_blk_num(&self) -> u64 {
+    pub fn inode_table_first_block(&self) -> u64 {
         ((self.inode_table_first_block_hi as u64) << 32) | self.inode_table_first_block_lo as u64
     }
 
@@ -214,10 +207,10 @@ impl Ext4BlockGroupDesc {
         self.sync_to_disk(block_device, bgid, super_block)
     }
 
-    pub fn set_block_group_ialloc_bitmap_csum(&mut self, s: &Ext4Superblock, bitmap: &[u8]) {
+    pub fn set_inode_bitmap_csum(&mut self, s: &Ext4Superblock, bitmap: &Bitmap) {
         let desc_size = s.desc_size();
 
-        let csum = ext4_ialloc_bitmap_csum(bitmap, s);
+        let csum = Self::calc_inode_bitmap_csum(&bitmap, s);
         let lo_csum = (csum & 0xFFFF).to_le();
         let hi_csum = (csum >> 16).to_le();
 
@@ -230,10 +223,10 @@ impl Ext4BlockGroupDesc {
         }
     }
 
-    pub fn set_block_group_balloc_bitmap_csum(&mut self, s: &Ext4Superblock, bitmap: &[u8]) {
+    pub fn set_block_bitmap_csum(&mut self, s: &Ext4Superblock, bitmap: &Bitmap) {
         let desc_size = s.desc_size();
 
-        let csum = ext4_balloc_bitmap_csum(bitmap, s);
+        let csum = Self::calc_block_bitmap_csum(&bitmap, s);
         let lo_csum = (csum & 0xFFFF).to_le();
         let hi_csum = (csum >> 16).to_le();
 
@@ -258,20 +251,20 @@ impl Ext4BlockGroupDesc {
         self.free_blocks_count_lo = ((cnt << 32) >> 32) as u16;
         self.free_blocks_count_hi = (cnt >> 32) as u16;
     }
-}
 
-fn ext4_ialloc_bitmap_csum(bitmap: &[u8], s: &Ext4Superblock) -> u32 {
-    let inodes_per_group = s.inodes_per_group();
-    let uuid = s.uuid();
-    let mut csum = ext4_crc32c(EXT4_CRC32_INIT, &uuid, uuid.len() as u32);
-    csum = ext4_crc32c(csum, bitmap, (inodes_per_group + 7) / 8);
-    csum
-}
+    pub fn calc_inode_bitmap_csum(bitmap: &Bitmap, s: &Ext4Superblock) -> u32 {
+        let inodes_per_group = s.inodes_per_group();
+        let uuid = s.uuid();
+        let mut csum = ext4_crc32c(EXT4_CRC32_INIT, &uuid, uuid.len() as u32);
+        csum = ext4_crc32c(csum, bitmap.as_raw(), (inodes_per_group + 7) / 8);
+        csum
+    }
 
-fn ext4_balloc_bitmap_csum(bitmap: &[u8], s: &Ext4Superblock) -> u32 {
-    let blocks_per_group = s.blocks_per_group();
-    let uuid = s.uuid();
-    let mut csum = ext4_crc32c(EXT4_CRC32_INIT, &uuid, uuid.len() as u32);
-    csum = ext4_crc32c(csum, bitmap, (blocks_per_group / 8) as u32);
-    csum
+    pub fn calc_block_bitmap_csum(bitmap: &Bitmap, s: &Ext4Superblock) -> u32 {
+        let blocks_per_group = s.blocks_per_group();
+        let uuid = s.uuid();
+        let mut csum = ext4_crc32c(EXT4_CRC32_INIT, &uuid, uuid.len() as u32);
+        csum = ext4_crc32c(csum, bitmap.as_raw(), (blocks_per_group / 8) as u32);
+        csum
+    }
 }
