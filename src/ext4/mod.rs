@@ -8,6 +8,7 @@ mod extent;
 mod file;
 mod journal;
 mod link;
+mod bitmap;
 mod utils;
 
 #[derive(Debug)]
