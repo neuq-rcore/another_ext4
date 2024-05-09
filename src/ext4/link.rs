@@ -4,7 +4,7 @@ use crate::ext4_defs::*;
 
 impl Ext4 {
     pub fn ext4_link(
-        &self,
+        &mut self,
         parent: &mut Ext4InodeRef,
         child: &mut Ext4InodeRef,
         name: &str,

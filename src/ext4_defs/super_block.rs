@@ -204,7 +204,7 @@ impl Ext4Superblock {
         self.want_extra_isize
     }
 
-    pub fn get_inodes_in_group_cnt(&self, bgid: u32) -> u32 {
+    pub fn inode_count_in_group(&self, bgid: u32) -> u32 {
         let block_group_count = self.block_groups_count();
         let inodes_per_group = self.inodes_per_group;
 
