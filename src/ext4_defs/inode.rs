@@ -93,6 +93,14 @@ impl Ext4Inode {
         (v & EXT4_INODE_MODE_TYPE_MASK) as u32
     }
 
+    pub fn is_dir(&self, super_block: &Ext4Superblock) -> bool {
+        self.inode_type(super_block) == EXT4_INODE_MODE_DIRECTORY as u32
+    }
+
+    pub fn is_softlink(&self, super_block: &Ext4Superblock) -> bool {
+        self.inode_type(super_block) == EXT4_INODE_MODE_SOFTLINK as u32
+    }
+
     pub fn links_cnt(&self) -> u16 {
         self.links_count
     }
@@ -313,7 +321,7 @@ impl Ext4Inode {
 }
 
 /// A combination of an `Ext4Inode` and its id
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct Ext4InodeRef {
     pub inode_id: u32,
     pub inode: Ext4Inode,

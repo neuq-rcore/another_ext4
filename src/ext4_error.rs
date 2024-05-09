@@ -3,7 +3,7 @@
 /// Ext4Error number.
 #[repr(i32)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub enum Errnum {
+pub enum ErrCode {
     EPERM = 1,       /* Operation not permitted */
     ENOENT = 2,      /* No such file or directory */
     EIO = 5,         /* I/O error */
@@ -32,61 +32,61 @@ pub enum Errnum {
 /// error used in this crate
 #[derive(Debug, Clone, Copy)]
 pub struct Ext4Error {
-    errno: Errnum,
+    errno: ErrCode,
     #[allow(unused)]
     msg: Option<&'static str>,
 }
 
 impl Ext4Error {
-    pub const fn new(errno: Errnum) -> Self {
+    pub const fn new(errno: ErrCode) -> Self {
         Ext4Error { errno, msg: None }
     }
 
-    pub const fn with_message(errno: Errnum, msg: &'static str) -> Self {
+    pub const fn with_message(errno: ErrCode, msg: &'static str) -> Self {
         Ext4Error {
             errno,
             msg: Some(msg),
         }
     }
 
-    pub const fn error(&self) -> Errnum {
+    pub const fn code(&self) -> ErrCode {
         self.errno
     }
 }
 
-impl From<Errnum> for Ext4Error {
-    fn from(errno: Errnum) -> Self {
+impl From<ErrCode> for Ext4Error {
+    fn from(errno: ErrCode) -> Self {
         Ext4Error::new(errno)
     }
 }
 
 impl From<core::str::Utf8Error> for Ext4Error {
     fn from(_: core::str::Utf8Error) -> Self {
-        Ext4Error::with_message(Errnum::EINVAL, "Invalid utf-8 string")
+        Ext4Error::with_message(ErrCode::EINVAL, "Invalid utf-8 string")
     }
 }
 
 impl From<alloc::string::FromUtf8Error> for Ext4Error {
     fn from(_: alloc::string::FromUtf8Error) -> Self {
-        Ext4Error::with_message(Errnum::EINVAL, "Invalid utf-8 string")
+        Ext4Error::with_message(ErrCode::EINVAL, "Invalid utf-8 string")
     }
 }
 
 impl From<core::ffi::FromBytesUntilNulError> for Ext4Error {
     fn from(_: core::ffi::FromBytesUntilNulError) -> Self {
-        Ext4Error::with_message(Errnum::E2BIG, "Cannot find null in cstring")
+        Ext4Error::with_message(ErrCode::E2BIG, "Cannot find null in cstring")
     }
 }
 
 impl From<core::ffi::FromBytesWithNulError> for Ext4Error {
     fn from(_: core::ffi::FromBytesWithNulError) -> Self {
-        Ext4Error::with_message(Errnum::E2BIG, "Cannot find null in cstring")
+        Ext4Error::with_message(ErrCode::E2BIG, "Cannot find null in cstring")
     }
 }
 
 impl From<alloc::ffi::NulError> for Ext4Error {
     fn from(_: alloc::ffi::NulError) -> Self {
-        Ext4Error::with_message(Errnum::E2BIG, "Cannot find null in cstring")
+        Ext4Error::with_message(ErrCode::E2BIG, "Cannot find null in cstring")
     }
 }
 

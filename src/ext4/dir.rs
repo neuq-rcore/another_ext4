@@ -1,4 +1,3 @@
-use super::utils::*;
 use super::Ext4;
 use crate::constants::*;
 use crate::ext4_defs::*;
@@ -6,14 +5,7 @@ use crate::prelude::*;
 
 impl Ext4 {
     /// Find a directory entry that matches a given name under a parent directory
-    ///
-    /// Save the result in `Ext4DirSearchResult`
-    pub fn dir_find_entry(
-        &self,
-        parent: &mut Ext4InodeRef,
-        name: &str,
-        result: &mut Ext4DirSearchResult,
-    ) -> usize {
+    pub fn dir_find_entry(&self, parent: &mut Ext4InodeRef, name: &str) -> Result<Ext4DirEntry> {
         let inode_size: u32 = parent.inode.size;
         let total_blocks: u32 = inode_size / BLOCK_SIZE as u32;
         let mut iblock: LBlockId = 0;
@@ -22,34 +14,24 @@ impl Ext4 {
             // Get the fs block id
             let fblock = self.extent_get_pblock(parent, iblock);
             // Load block from disk
-            let mut data = self.block_device.read_offset(fblock as usize * BLOCK_SIZE);
-            let mut ext4_block = Ext4Block {
-                logical_block_id: iblock,
-                disk_block_id: fblock,
-                block_data: &mut data,
-                dirty: false,
-            };
+            let mut block_data = self.block_device.read_offset(fblock as usize * BLOCK_SIZE);
             // Find the entry in block
-            let r = Self::find_entry_in_block(&mut ext4_block, name, result);
-            if r {
-                return EOK;
+            let res = Self::find_entry_in_block(&mut block_data, name);
+            if let Ok(r) = res {
+                return Ok(r);
             }
             iblock += 1
         }
-        ENOENT
+        Err(Ext4Error::new(ErrCode::ENOENT))
     }
 
     /// Find a directory entry that matches a given name in a given block
     ///
     /// Save the result in `Ext4DirSearchResult`
-    fn find_entry_in_block(
-        block: &Ext4Block,
-        name: &str,
-        result: &mut Ext4DirSearchResult,
-    ) -> bool {
+    fn find_entry_in_block(block_data: &[u8], name: &str) -> Result<Ext4DirEntry> {
         let mut offset = 0;
-        while offset < block.block_data.len() {
-            let de = Ext4DirEntry::try_from(&block.block_data[offset..]).unwrap();
+        while offset < block_data.len() {
+            let de = Ext4DirEntry::try_from(&block_data[offset..]).unwrap();
             offset += de.rec_len() as usize;
             // Unused dir entry
             if de.unused() {
@@ -57,24 +39,23 @@ impl Ext4 {
             }
             // Compare name
             if de.compare_name(name) {
-                result.dentry = de;
-                return true;
+                return Ok(de);
             }
         }
-        false
+        Err(Ext4Error::new(ErrCode::ENOENT))
     }
 
     /// Add an entry to a directory
     pub fn dir_add_entry(
         &mut self,
         parent: &mut Ext4InodeRef,
-        child: &mut Ext4InodeRef,
+        child: &Ext4InodeRef,
         path: &str,
     ) -> usize {
         let block_size = self.super_block.block_size();
         let inode_size = parent.inode.size();
         let total_blocks = inode_size as u32 / block_size;
-        
+
         // Try finding a block with enough space
         let mut iblock: LBlockId = 0;
         while iblock < total_blocks {
@@ -117,12 +98,7 @@ impl Ext4 {
 
     /// Insert a directory entry of a child inode into a new parent block.
     /// A new block must have enough space
-    fn insert_entry_to_new_block(
-        &self,
-        dst_blk: &mut Ext4Block,
-        child: &mut Ext4InodeRef,
-        name: &str,
-    ) {
+    fn insert_entry_to_new_block(&self, dst_blk: &mut Ext4Block, child: &Ext4InodeRef, name: &str) {
         // Set the entry
         let mut new_entry = Ext4DirEntry::default();
         let rec_len = BLOCK_SIZE - size_of::<Ext4DirEntryTail>();
@@ -152,7 +128,7 @@ impl Ext4 {
     fn insert_entry_to_old_block(
         &self,
         dst_blk: &mut Ext4Block,
-        child: &mut Ext4InodeRef,
+        child: &Ext4InodeRef,
         name: &str,
     ) -> usize {
         let required_size = Ext4DirEntry::required_size(name.len());
@@ -212,26 +188,16 @@ impl Ext4 {
         en.set_name(name);
     }
 
-    pub fn ext4_dir_mk(&self, path: &str) -> Result<usize> {
-        let mut file = Ext4File::new();
-        let flags = "w";
-
-        let filetype = FileType::Directory;
-
-        // get mount point
-        let mut ptr = Box::new(self.mount_point.clone());
-        file.mp = Box::as_mut(&mut ptr) as *mut Ext4MountPoint;
-
+    /// Create a new directory. `path` is the absolute path of the new directory.
+    pub fn ext4_dir_mk(&mut self, path: &str) -> Result<()> {
         // get open flags
-        let iflags = ext4_parse_flags(flags).unwrap();
-
-        if iflags & O_CREAT != 0 {
-            self.ext4_trans_start();
-        }
-
-        let mut root_inode_ref = self.get_root_inode_ref();
-
-        let r = self.ext4_generic_open(&mut file, path, iflags, filetype, &mut root_inode_ref);
-        r
+        let iflags = OpenFlags::from_str("w").unwrap();
+        self.ext4_generic_open(
+            path,
+            iflags,
+            FileType::Directory,
+            &self.get_root_inode_ref(),
+        )
+        .map(|_| ())
     }
 }

@@ -1,6 +1,7 @@
 use super::Ext4;
 use crate::constants::*;
 use crate::ext4_defs::*;
+use crate::prelude::*;
 
 impl Ext4 {
     /// Allocate a new data block for an inode, return the physical block number
@@ -108,7 +109,7 @@ impl Ext4 {
 
         // Sync the inode to disk
         self.write_back_inode_with_csum(&mut inode_ref);
-        
+
         inode_ref
     }
 
@@ -146,7 +147,7 @@ impl Ext4 {
                 .find_and_set_first_clear_bit(0, inode_count as usize)
                 .unwrap() as u32;
 
-            // update bitmap in disk
+            // Update bitmap in disk
             self.block_device
                 .write_offset(inode_bitmap_block as usize * BLOCK_SIZE, &bitmap.as_raw());
             bg.set_inode_bitmap_csum(&self.super_block, &bitmap);

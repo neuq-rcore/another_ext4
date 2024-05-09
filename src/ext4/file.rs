@@ -1,295 +1,194 @@
-use super::utils::*;
 use super::Ext4;
 use crate::constants::*;
 use crate::ext4_defs::*;
 use crate::prelude::*;
 use crate::return_errno_with_message;
+use core::cmp::min;
 
 impl Ext4 {
-    pub fn ext4_generic_open(
-        &self,
-        file: &mut Ext4File,
-        path: &str,
-        iflags: u32,
-        ftype: FileType,
-        parent_inode: &mut Ext4InodeRef,
-    ) -> Result<usize> {
-        let mut is_goal = false;
-
-        let mut data: Vec<u8> = Vec::with_capacity(BLOCK_SIZE);
-        let ext4_blk = Ext4Block {
-            logical_block_id: 0,
-            disk_block_id: 0,
-            block_data: &mut data,
-            dirty: true,
-        };
-        let de = Ext4DirEntry::default();
-        let mut dir_search_result = Ext4DirSearchResult::new(ext4_blk, de);
-
-        file.flags = iflags;
-
-        // load root inode
-        let root_inode_ref = self.get_root_inode_ref();
-
-        // if !parent_inode.is_none() {
-        //     parent_inode.unwrap().inode_num = root_inode_ref.inode_num;
-        // }
-
-        // search dir
-        let mut search_parent = root_inode_ref;
-        let mut search_path = ext4_path_skip(&path, ".");
-        let mut len;
-        loop {
-            search_path = ext4_path_skip(search_path, "/");
-            len = ext4_path_check(search_path, &mut is_goal);
-
-            let r = self.dir_find_entry(
-                &mut search_parent,
-                &search_path[..len as usize],
-                &mut dir_search_result,
-            );
-
-            // log::info!("dir_search_result.dentry {:?} r {:?}", dir_search_result.dentry, r);
-            if r != EOK {
-                // ext4_dir_destroy_result(&mut root_inode_ref, &mut dir_search_result);
-
-                if r != ENOENT {
-                    // dir search failed with error other than ENOENT
-                    return_errno_with_message!(Errnum::ENOTSUP, "dir search failed");
-                }
-
-                if !((iflags & O_CREAT) != 0) {
-                    return_errno_with_message!(Errnum::ENOENT, "file not found");
-                }
-
-                let mut child_inode_ref = Ext4InodeRef::default();
-
-                let r = if is_goal {
-                    self.ext4_fs_alloc_inode(&mut child_inode_ref, ftype)
-                } else {
-                    self.ext4_fs_alloc_inode(&mut child_inode_ref, FileType::Directory)
-                };
-
-                if r != EOK {
-                    return_errno_with_message!(Errnum::EALLOCFIAL, "alloc inode fail");
-                    // break;
-                }
-
-                Self::ext4_fs_inode_blocks_init(&mut child_inode_ref);
-
-                let r = self.ext4_link(
-                    &mut search_parent,
-                    &mut child_inode_ref,
-                    &search_path[..len as usize],
-                );
-
-                if r != EOK {
-                    /*Fail. Free new inode.*/
-                    return_errno_with_message!(Errnum::ELINKFIAL, "link fail");
-                }
-
-                self.write_back_inode_with_csum(&mut search_parent);
-                self.write_back_inode_with_csum(&mut child_inode_ref);
-                self.write_back_inode_with_csum(parent_inode);
-
-                continue;
-            }
-            // log::info!("find de name{:?} de inode {:x?}", name, dir_search_result.dentry.inode);
-
-            if is_goal {
-                file.inode = dir_search_result.dentry.inode();
-                return Ok(EOK);
-            } else {
-                search_parent = self.get_inode_ref(dir_search_result.dentry.inode());
-                search_path = &search_path[len..];
-            }
-        }
+    fn split_path(path: &str) -> Vec<String> {
+        let _ = path.trim_start_matches("/");
+        path.split("/").map(|s| s.to_string()).collect()
     }
 
-    pub fn ext4_open(
-        &self,
-        file: &mut Ext4File,
+    pub fn ext4_generic_open(
+        &mut self,
         path: &str,
-        flags: &str,
-        file_expect: bool,
-    ) -> Result<usize> {
-        // get open flags
-        let iflags = ext4_parse_flags(flags).unwrap();
+        flag: OpenFlags,
+        ftype: FileType,
+        parent_inode: &Ext4InodeRef,
+    ) -> Result<Ext4File> {
+        // Search from the given parent inode
+        let mut parent = parent_inode.clone();
+        let search_path = Self::split_path(path);
 
-        // get mount point
-        let mut ptr = Box::new(self.mount_point.clone());
-        file.mp = Box::as_mut(&mut ptr) as *mut Ext4MountPoint;
+        for (i, path) in search_path.iter().enumerate() {
+            let res = self.dir_find_entry(&mut parent, path);
+            match res {
+                Ok(entry) => {
+                    parent = self.get_inode_ref(entry.inode());
+                }
+                Err(e) => {
+                    if e.code() != ErrCode::ENOENT {
+                        // dir search failed with error other than ENOENT
+                        return_errno_with_message!(ErrCode::ENOTSUP, "dir search failed");
+                    }
+                    if !flag.contains(OpenFlags::O_CREAT) {
+                        return_errno_with_message!(ErrCode::ENOENT, "file not found");
+                    }
+                    // Create file/directory
+                    let mut child = if i == search_path.len() - 1 {
+                        self.alloc_inode(ftype)
+                    } else {
+                        self.alloc_inode(FileType::Directory)
+                    };
+                    Self::ext4_fs_inode_blocks_init(&mut child);
+                    // Link the new inode
+                    let r = self.ext4_link(&mut parent, &mut child, path);
+                    if r != EOK {
+                        // Fail. Free new inode
+                        return_errno_with_message!(ErrCode::ELINKFIAL, "link fail");
+                    }
+                    // Write back parent and child
+                    self.write_back_inode_with_csum(&mut parent);
+                    self.write_back_inode_with_csum(&mut child);
+                }
+            }
+        }
 
-        // file for dir
-        let filetype = if file_expect {
+        // Reach the target
+        let mut file = Ext4File::default();
+        file.inode = parent.inode_id;
+        Ok(file)
+    }
+
+    pub fn ext4_open(&mut self, path: &str, flags: &str, file_expect: bool) -> Result<Ext4File> {
+        // open flags
+        let iflags = OpenFlags::from_str(flags).unwrap();
+        // file type
+        let file_type = if file_expect {
             FileType::RegularFile
         } else {
             FileType::Directory
         };
-
-        if iflags & O_CREAT != 0 {
+        // TODO:journal
+        if iflags.contains(OpenFlags::O_CREAT) {
             self.ext4_trans_start();
         }
-
-        let mut root_inode_ref = self.get_root_inode_ref();
-
-        let r = self.ext4_generic_open(file, path, iflags, filetype, &mut root_inode_ref);
-
-        r
+        // open file
+        let res = self.ext4_generic_open(path, iflags, file_type, &self.get_root_inode_ref());
+        res.map(|mut file| {
+            // set mount point
+            let mut ptr = Box::new(self.mount_point.clone());
+            file.mp = Box::as_mut(&mut ptr) as *mut Ext4MountPoint;
+            file
+        })
     }
 
     #[allow(unused)]
     pub fn ext4_file_read(
         &self,
-        ext4_file: &mut Ext4File,
+        file: &mut Ext4File,
         read_buf: &mut [u8],
-        size: usize,
-        read_cnt: &mut usize,
+        read_size: usize,
     ) -> Result<usize> {
-        if size == 0 {
-            return Ok(EOK);
+        // Read no bytes
+        if read_size == 0 {
+            return Ok(0);
         }
-
-        let mut inode_ref = self.get_inode_ref(ext4_file.inode);
-
+        // Get the inode of the file
+        let mut inode_ref = self.get_inode_ref(file.inode);
         // sync file size
-        ext4_file.fsize = inode_ref.inode.size();
+        file.fsize = inode_ref.inode.size();
 
-        let is_softlink =
-            inode_ref.inode.inode_type(&self.super_block) == EXT4_INODE_MODE_SOFTLINK as u32;
-
-        if is_softlink {
+        // Check if the file is a softlink
+        if inode_ref.inode.is_softlink(&self.super_block) {
+            // TODO: read softlink
             log::debug!("ext4_read unsupported softlink");
         }
 
-        let block_size = BLOCK_SIZE;
+        // Calc the actual size to read
+        let size_to_read = min(read_size, file.fsize as usize - file.fpos);
+        // Calc the start block of reading
+        let start_iblock = (file.fpos / BLOCK_SIZE) as LBlockId;
+        // Calc the length that is not aligned to the block size
+        let mut misaligned = file.fpos % BLOCK_SIZE;
 
-        // 计算读取大小
-        let size_to_read = if size > (ext4_file.fsize as usize - ext4_file.fpos) {
-            ext4_file.fsize as usize - ext4_file.fpos
-        } else {
-            size
-        };
-
-        let mut iblock_idx = (ext4_file.fpos / block_size) as u32;
-        let iblock_last = ((ext4_file.fpos + size_to_read) / block_size) as u32;
-        let mut unalg = (ext4_file.fpos % block_size) as u32;
-
-        let mut offset = 0;
-        let mut total_bytes_read = 0;
-
-        if unalg > 0 {
-            let first_block_read_len = core::cmp::min(block_size - unalg as usize, size_to_read);
-            let mut fblock = 0;
-
-            self.ext4_fs_get_inode_dblk_idx(&mut inode_ref, &mut iblock_idx, &mut fblock, false);
-
-            // if r != EOK {
-            //     return Err(Ext4Error::new(r));
-            // }
-
+        let mut cursor = 0;
+        let mut iblock = start_iblock;
+        // Read first block
+        if misaligned > 0 {
+            let first_block_read_len = min(BLOCK_SIZE - misaligned, size_to_read);
+            let fblock = self.extent_get_pblock(&mut inode_ref, start_iblock);
             if fblock != 0 {
-                let block_offset = fblock * block_size as u64 + unalg as u64;
-                let block_data = self.block_device.read_offset(block_offset as usize);
-
+                let block_offset = fblock as usize * BLOCK_SIZE + misaligned;
+                let block_data = self.block_device.read_offset(block_offset);
                 // Copy data from block to the user buffer
-                read_buf[offset..offset + first_block_read_len]
+                read_buf[cursor..cursor + first_block_read_len]
                     .copy_from_slice(&block_data[0..first_block_read_len]);
             } else {
                 // Handle the unwritten block by zeroing out the respective part of the buffer
-                for x in &mut read_buf[offset..offset + first_block_read_len] {
-                    *x = 0;
-                }
+                read_buf[cursor..cursor + first_block_read_len].fill(0);
             }
-
-            offset += first_block_read_len;
-            total_bytes_read += first_block_read_len;
-            ext4_file.fpos += first_block_read_len;
-            *read_cnt += first_block_read_len;
-            iblock_idx += 1;
+            cursor += first_block_read_len;
+            file.fpos += first_block_read_len;
+            iblock += 1;
         }
-
         // Continue with full block reads
-        while total_bytes_read < size_to_read {
-            let read_length = core::cmp::min(block_size, size_to_read - total_bytes_read);
-            let mut fblock = 0;
-
-            self.ext4_fs_get_inode_dblk_idx(&mut inode_ref, &mut iblock_idx, &mut fblock, false);
-
-            // if r != EOK {
-            //     return Err(Ext4Error::new(r));
-            // }
-
+        while cursor < size_to_read {
+            let read_length = min(BLOCK_SIZE, size_to_read - cursor);
+            let fblock = self.extent_get_pblock(&mut inode_ref, iblock);
             if fblock != 0 {
-                let block_data = self
-                    .block_device
-                    .read_offset((fblock * block_size as u64) as usize);
-                read_buf[offset..offset + read_length].copy_from_slice(&block_data[0..read_length]);
+                let block_data = self.block_device.read_offset(fblock as usize * BLOCK_SIZE);
+                // Copy data from block to the user buffer
+                read_buf[cursor..cursor + read_length].copy_from_slice(&block_data[0..read_length]);
             } else {
                 // Handle the unwritten block by zeroing out the respective part of the buffer
-                for x in &mut read_buf[offset..offset + read_length] {
-                    *x = 0;
-                }
+                read_buf[cursor..cursor + read_length].fill(0);
             }
-
-            offset += read_length;
-            total_bytes_read += read_length;
-            ext4_file.fpos += read_length;
-            *read_cnt += read_length;
-            iblock_idx += 1;
+            cursor += read_length;
+            file.fpos += read_length;
+            iblock += 1;
         }
 
-        return Ok(EOK);
+        Ok(cursor)
     }
 
-    pub fn ext4_file_write(&self, ext4_file: &mut Ext4File, data: &[u8], size: usize) {
-        let super_block_data = self.block_device.read_offset(BASE_OFFSET);
-        let super_block = Ext4Superblock::try_from(super_block_data).unwrap();
-        let mut inode_ref = self.get_inode_ref(ext4_file.inode);
-        let block_size = super_block.block_size() as usize;
-        let iblock_last = ext4_file.fpos as usize + size / block_size;
-        let mut iblk_idx = ext4_file.fpos as usize / block_size;
-        let ifile_blocks = ext4_file.fsize as usize + block_size - 1 / block_size;
+    pub fn ext4_file_write(&mut self, file: &mut Ext4File, data: &[u8]) {
+        let size = data.len();
+        let mut inode_ref = self.get_inode_ref(file.inode);
+        // Sync ext file
+        file.fsize = inode_ref.inode.size();
 
-        let mut fblk = 0;
-        let mut fblock_start = 0;
-        let mut fblock_count = 0;
+        // Calc the start and end block of reading
+        let start_iblock = (file.fpos / BLOCK_SIZE) as LBlockId;
+        let end_iblock = ((file.fpos + size) / BLOCK_SIZE) as LBlockId;
+        // Calc the block count of the file
+        let block_count = (file.fsize as usize + BLOCK_SIZE - 1) / BLOCK_SIZE;
+        // Append enough block for writing
+        let append_block_count = end_iblock + 1 - block_count as LBlockId;
+        for _ in 0..append_block_count {
+            self.inode_append_block(&mut inode_ref);
+        }
 
-        let mut size = size;
-        while size >= block_size {
-            while iblk_idx < iblock_last {
-                if iblk_idx < ifile_blocks {
-                    self.ext4_fs_append_inode_dblk(
-                        &mut inode_ref,
-                        &mut (iblk_idx as u32),
-                        &mut fblk,
-                    );
-                }
-
-                iblk_idx += 1;
-
-                if fblock_start == 0 {
-                    fblock_start = fblk;
-                }
-                fblock_count += 1;
+        // Write data
+        let mut cursor = 0;
+        let mut iblock = start_iblock;
+        while cursor < size {
+            let write_len = min(BLOCK_SIZE, size - cursor);
+            let fblock = self.extent_get_pblock(&mut inode_ref, iblock);
+            if fblock != 0 {
+                self.block_device.write_offset(cursor, &data[cursor..cursor + write_len]);
+            } else {
+                panic!("Write to unallocated block");
             }
-            size -= block_size;
+            cursor += write_len;
+            file.fpos += write_len;
+            iblock += 1;
         }
-
-        for i in 0..fblock_count {
-            let idx = i * BLOCK_SIZE as usize;
-            let offset = (fblock_start as usize + i as usize) * BLOCK_SIZE;
-            self.block_device
-                .write_offset(offset, &data[idx..(idx + BLOCK_SIZE as usize)]);
-        }
-        // inode_ref.inner.inode.size = fblock_count as u32 * BLOCK_SIZE as u32;
-        self.write_back_inode_with_csum(&mut inode_ref);
-        // let mut inode_ref = Ext4InodeRef::get_inode_ref(self.self_ref.clone(), ext4_file.inode);
-        let mut root_inode_ref = self.get_root_inode_ref();
-        self.write_back_inode_with_csum(&mut root_inode_ref);
     }
 
     pub fn ext4_file_remove(&self, _path: &str) -> Result<usize> {
-        return_errno_with_message!(Errnum::ENOTSUP, "not support");
+        return_errno_with_message!(ErrCode::ENOTSUP, "not support");
     }
 }

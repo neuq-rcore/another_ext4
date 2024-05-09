@@ -202,17 +202,6 @@ impl Ext4DirEntryTail {
     }
 }
 
-pub struct Ext4DirSearchResult<'a> {
-    pub block: Ext4Block<'a>,
-    pub dentry: Ext4DirEntry,
-}
-
-impl<'a> Ext4DirSearchResult<'a> {
-    pub fn new(block: Ext4Block<'a>, dentry: Ext4DirEntry) -> Self {
-        Self { block, dentry }
-    }
-}
-
 /// Fake dir entry. A normal entry without `name` field`
 #[repr(C)]
 pub struct Ext4FakeDirEntry {

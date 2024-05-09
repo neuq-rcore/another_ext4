@@ -8,7 +8,6 @@ mod extent;
 mod file;
 mod journal;
 mod link;
-mod utils;
 
 #[derive(Debug)]
 pub struct Ext4 {
