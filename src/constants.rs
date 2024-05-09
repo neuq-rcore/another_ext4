@@ -4,8 +4,8 @@ use bitflags::bitflags;
 
 pub const EOK: usize = 0;
 
-pub type Ext4LogicBlockId = u32;
-pub type Ext4FsBlockId = u64;
+pub type LBlockId = u32;
+pub type PBlockId = u64;
 
 pub const EXT4_INODE_FLAG_EXTENTS: usize = 0x00080000; /* Inode uses extents */
 pub const EXT4_MIN_BLOCK_GROUP_DESCRIPTOR_SIZE: u16 = 32;
@@ -26,7 +26,7 @@ pub const EXT4_INODE_MODE_SOFTLINK: usize = 0xA000;
 pub const EXT4_INODE_MODE_SOCKET: usize = 0xC000;
 pub const EXT4_INODE_MODE_TYPE_MASK: u16 = 0xF000;
 
-pub const EXT_MAX_BLOCKS: Ext4LogicBlockId = core::u32::MAX;
+pub const EXT_MAX_BLOCKS: LBlockId = core::u32::MAX;
 
 pub const EXT4_SUPERBLOCK_OS_HURD: u32 = 1;
 

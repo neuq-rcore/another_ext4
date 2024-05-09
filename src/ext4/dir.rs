@@ -14,15 +14,13 @@ impl Ext4 {
         name: &str,
         result: &mut Ext4DirSearchResult,
     ) -> usize {
-        let mut iblock: Ext4LogicBlockId = 0;
-        let mut fblock: Ext4FsBlockId = 0;
-
         let inode_size: u32 = parent.inode.size;
         let total_blocks: u32 = inode_size / BLOCK_SIZE as u32;
+        let mut iblock: LBlockId = 0;
 
         while iblock < total_blocks {
             // Get the fs block id
-            self.ext4_fs_get_inode_dblk_idx(parent, &mut iblock, &mut fblock, false);
+            let fblock = self.extent_get_pblock(parent, iblock);
             // Load block from disk
             let mut data = self.block_device.read_offset(fblock as usize * BLOCK_SIZE);
             let mut ext4_block = Ext4Block {
@@ -68,7 +66,7 @@ impl Ext4 {
 
     /// Add an entry to a directory
     pub fn dir_add_entry(
-        &self,
+        &mut self,
         parent: &mut Ext4InodeRef,
         child: &mut Ext4InodeRef,
         path: &str,
@@ -76,14 +74,12 @@ impl Ext4 {
         let block_size = self.super_block.block_size();
         let inode_size = parent.inode.size();
         let total_blocks = inode_size as u32 / block_size;
-
-        let mut iblock = 0;
-        let mut fblock: Ext4FsBlockId = 0;
-
+        
         // Try finding a block with enough space
+        let mut iblock: LBlockId = 0;
         while iblock < total_blocks {
-            // Get the parent fs block id
-            self.ext4_fs_get_inode_dblk_idx(parent, &mut iblock, &mut fblock, false);
+            // Get the parent physical block id
+            let fblock = self.extent_get_pblock(parent, iblock);
             // Load the parent block from disk
             let mut data = self.block_device.read_offset(fblock as usize * BLOCK_SIZE);
             let mut ext4_block = Ext4Block {
@@ -102,10 +98,8 @@ impl Ext4 {
         }
 
         // No free block found - needed to allocate a new data block
-        iblock = 0;
-        fblock = 0;
         // Append a new data block
-        self.ext4_fs_append_inode_dblk(parent, &mut iblock, &mut fblock);
+        let (iblock, fblock) = self.inode_append_block(parent);
         // Load new block
         let block_device = self.block_device.clone();
         let mut data = block_device.read_offset(fblock as usize * BLOCK_SIZE);

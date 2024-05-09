@@ -2,244 +2,175 @@ use super::Ext4;
 use crate::constants::*;
 use crate::ext4_defs::*;
 use crate::prelude::*;
+use core::cmp::min;
 
 impl Ext4 {
-    pub fn find_extent(
-        inode_ref: &mut Ext4InodeRef,
-        block_id: Ext4LogicBlockId,
-        orig_path: &mut Option<Vec<Ext4ExtentPath>>,
-        _flags: u32,
-    ) -> usize {
-        let inode = &inode_ref.inode;
-        let mut _eh: &Ext4ExtentHeader;
-        let mut path = orig_path.take(); // Take the path out of the Option, which may replace it with None
-        let depth = ext4_depth(inode);
-
-        let mut ppos = 0;
-        let mut i: u16;
-
-        let eh = &inode.block as *const [u32; 15] as *mut Ext4ExtentHeader;
-
-        if let Some(ref mut p) = path {
-            if depth > p[0].maxdepth {
-                p.clear();
+    /// Find the given logic block id in the extent tree, return the search path
+    fn find_extent(&self, inode_ref: &mut Ext4InodeRef, iblock: LBlockId) -> Vec<ExtentSearchPath> {
+        let mut path: Vec<ExtentSearchPath> = Vec::new();
+        let mut eh = inode_ref.inode.extent_header().clone();
+        let mut pblock = 0;
+        let mut block_data: Vec<u8>;
+        // Go until leaf
+        while eh.depth() > 0 {
+            let index = eh.extent_index_search(iblock);
+            if index.is_err() {
+                // TODO: no extent index
+                panic!("Unhandled error");
             }
+            path.push(ExtentSearchPath::new_inner(pblock, index));
+            // Get the target extent index
+            let ex_idx = eh.extent_index_at(index.unwrap());
+            // Load the next extent node
+            let next = ex_idx.leaf();
+            // Note: block data cannot be released until the next assigment
+            block_data = self.block_device.read_offset(next as usize * BLOCK_SIZE);
+            // Load the next extent header
+            eh = Ext4ExtentHeader::load_from_block(&block_data);
+            pblock = next;
         }
-        if path.is_none() {
-            let path_depth = depth + 1;
-            path = Some(vec![Ext4ExtentPath::default(); path_depth as usize + 1]);
-            path.as_mut().unwrap()[0].maxdepth = path_depth;
-        }
+        // Leaf
+        let index = eh.extent_search(iblock);
+        path.push(ExtentSearchPath::new_leaf(pblock, index));
 
-        let path = path.as_mut().unwrap();
-        path[0].header = eh;
-
-        i = depth;
-        while i > 0 {
-            ext4_ext_binsearch_idx(&mut path[ppos], block_id);
-            path[ppos].p_block = ext4_idx_pblock(path[ppos].index);
-            path[ppos].depth = i;
-            path[ppos].extent = core::ptr::null_mut();
-
-            i -= 1;
-            ppos += 1;
-        }
-
-        path[ppos].depth = i;
-        path[ppos].extent = core::ptr::null_mut();
-        path[ppos].index = core::ptr::null_mut();
-
-        ext4_ext_binsearch(&mut path[ppos], block_id);
-        if !path[ppos].extent.is_null() {
-            path[ppos].p_block = unsafe { (*path[ppos].extent).pblock() };
-        }
-
-        *orig_path = Some(path.clone());
-
-        EOK
+        path
     }
 
-    pub fn ext4_extent_get_blocks(
-        &self,
-        inode_ref: &mut Ext4InodeRef,
-        iblock: Ext4LogicBlockId,
-        max_blocks: u32,
-        result: &mut Ext4FsBlockId,
-        create: bool,
-        blocks_count: &mut u32,
-    ) {
-        *result = 0;
-        *blocks_count = 0;
-
-        let mut path: Option<Vec<Ext4ExtentPath>> = None;
-        let err = Self::find_extent(inode_ref, iblock, &mut path, 0);
-
-        let inode = &inode_ref.inode;
-        // 确认ext4_find_extent成功执行
-        if err != EOK {
-            return;
-        }
-
-        let depth = unsafe { *ext4_extent_hdr(inode) }.depth as usize;
-        let mut path = path.unwrap();
-
-        if !path[depth].extent.is_null() {
-            let ex = unsafe { *path[depth].extent };
-            let ee_block = ex.first_block;
-            let ee_start = ex.pblock();
-            let ee_len = ex.actual_len();
-
-            if iblock >= ee_block && iblock < ee_block + ee_len as u32 {
-                let allocated = ee_len - (iblock - ee_block) as u16;
-                *blocks_count = allocated as u32;
-
-                if !create || ex.is_unwritten() {
-                    *result = (iblock - ee_block) as u64 + ee_start;
-                    return;
-                }
-            }
-        }
-
-        // 如果没有找到对应的extent，并且create为true，则需要分配和插入新的extent
-        if create {
-            let next = EXT_MAX_BLOCKS;
-
-            let mut allocated = next - iblock;
-            if allocated > max_blocks {
-                allocated = max_blocks;
-            }
-
-            let mut newex: Ext4Extent = Ext4Extent::default();
-
-            let goal = 0;
-
-            let mut alloc_block = 0;
-            self.ext4_balloc_alloc_block(inode_ref, goal as u64, &mut alloc_block);
-
-            *result = alloc_block;
-
-            // 创建并插入新的extent
-            newex.first_block = iblock;
-            newex.start_lo = alloc_block as u32 & 0xffffffff;
-            newex.start_hi = (((alloc_block as u32) << 31) << 1) as u16;
-            newex.block_count = allocated as u16;
-
-            self.ext4_ext_insert_extent(inode_ref, &mut path[0], &newex, 0);
-        }
-    }
-
-    pub fn ext4_ext_insert_extent(
-        &self,
-        inode_ref: &mut Ext4InodeRef,
-        path: &mut Ext4ExtentPath,
-        newext: &Ext4Extent,
-        flags: i32,
-    ) {
-        let depth = ext4_depth(&inode_ref.inode);
-        let mut need_split = false;
-
-        self.ext4_ext_insert_leaf(inode_ref, path, depth, newext, flags, &mut need_split);
-
-        self.write_back_inode_without_csum(inode_ref);
-    }
-
-    pub fn ext4_ext_insert_leaf(
-        &self,
-        _inode_ref: &mut Ext4InodeRef,
-        path: &mut Ext4ExtentPath,
-        _depth: u16,
-        newext: &Ext4Extent,
-        _flags: i32,
-        need_split: &mut bool,
-    ) -> usize {
-        let eh = path.header;
-        let ex = path.extent;
-        let _last_ex = ext4_last_extent(eh);
-
-        let mut diskblock = newext.start_lo;
-        diskblock |= ((newext.start_hi as u32) << 31) << 1;
-
-        unsafe {
-            if !ex.is_null() && Ext4Extent::can_append(&*(path.extent), newext) {
-                if (*path.extent).is_unwritten() {
-                    (*path.extent).mark_unwritten();
-                }
-                (*(path.extent)).block_count = (*path.extent).actual_len() + newext.actual_len();
-                (*path).p_block = diskblock as u64;
-                return EOK;
-            }
-            if !ex.is_null() && Ext4Extent::can_append(newext, &*(path.extent)) {
-                (*(path.extent)).block_count = (*path.extent).actual_len() + newext.actual_len();
-                (*path).p_block = diskblock as u64;
-                if (*path.extent).is_unwritten() {
-                    (*path.extent).mark_unwritten();
-                }
-                return EOK;
-            }
-        }
-
-        if ex.is_null() {
-            let first_extent = ext4_first_extent_mut(eh);
-            path.extent = first_extent;
-            // log::info!("first_extent {:x?}", unsafe{*first_extent});
-            unsafe {
-                if (*eh).entries_count == (*eh).max_entries_count {
-                    *need_split = true;
-                    return EIO;
-                } else {
-                    *(path.extent) = *newext;
-                }
-            }
-        }
-
-        unsafe {
-            if (*eh).entries_count == (*eh).max_entries_count {
-                *need_split = true;
-                *(path.extent) = *newext;
-
-                (*path).p_block = diskblock as u64;
-                return EIO;
+    /// Given a logic block id, find the corresponding fs block id.
+    /// Return 0 if not found.
+    pub fn extent_get_pblock(&self, inode_ref: &mut Ext4InodeRef, iblock: LBlockId) -> PBlockId {
+        let path = self.find_extent(inode_ref, iblock);
+        // Leaf is the last element of the path
+        let leaf = path.last().unwrap();
+        if let Ok(index) = leaf.index {
+            // Note: block data must be defined here to keep it alive
+            let block_data: Vec<u8>;
+            let eh = if leaf.pblock != 0 {
+                // Load the extent node
+                block_data = self
+                    .block_device
+                    .read_offset(leaf.pblock as usize * BLOCK_SIZE);
+                // Load the next extent header
+                Ext4ExtentHeader::load_from_block(&block_data)
             } else {
-                if ex.is_null() {
-                    let first_extent = ext4_first_extent_mut(eh);
-                    path.extent = first_extent;
-                    *(path.extent) = *newext;
-                } else if newext.first_block > (*(path.extent)).first_block {
-                    // insert after
-                    let next_extent = ex.add(1);
-                    path.extent = next_extent;
-                } else {
-                }
-            }
-
-            *(path.extent) = *newext;
-            (*eh).entries_count += 1;
+                // Root node
+                inode_ref.inode.extent_header().clone()
+            };
+            let ex = eh.extent_at(index);
+            ex.start_pblock() + (iblock - ex.start_lblock()) as PBlockId
+        } else {
+            0
         }
-        unsafe {
-            *(path.extent) = *newext;
-        }
-
-        return EOK;
     }
 
-    pub fn ext4_find_all_extent(&self, inode_ref: &Ext4InodeRef, extents: &mut Vec<Ext4Extent>) {
-        let extent_header = Ext4ExtentHeader::try_from(&inode_ref.inode.block[..2]).unwrap();
-        // log::info!("extent_header {:x?}", extent_header);
-        let data = &inode_ref.inode.block;
-        let depth = extent_header.depth;
-        self.ext4_add_extent(inode_ref, depth, data, extents, true);
+    /// Given a logic block id, find the corresponding fs block id.
+    /// Create a new extent if not found.
+    pub fn extent_get_pblock_create(
+        &mut self,
+        inode_ref: &mut Ext4InodeRef,
+        iblock: LBlockId,
+        block_count: u32,
+    ) -> PBlockId {
+        let path = self.find_extent(inode_ref, iblock);
+        // Leaf is the last element of the path
+        let leaf = path.last().unwrap();
+        // Note: block data must be defined here to keep it alive
+        let block_data: Vec<u8>;
+        let eh = if leaf.pblock != 0 {
+            // Load the extent node
+            block_data = self
+                .block_device
+                .read_offset(leaf.pblock as usize * BLOCK_SIZE);
+            // Load the next extent header
+            Ext4ExtentHeader::load_from_block(&block_data)
+        } else {
+            // Root node
+            inode_ref.inode.extent_header().clone()
+        };
+        match leaf.index {
+            Ok(index) => {
+                // Found, return the corresponding fs block id
+                let ex = eh.extent_at(index);
+                ex.start_pblock() + (iblock - ex.start_lblock()) as PBlockId
+            }
+            Err(_) => {
+                // Not found, create a new extent
+                let block_count = min(block_count, EXT_MAX_BLOCKS - iblock);
+                // Allocate physical block
+                let fblock = self.alloc_block(inode_ref, 0);
+                // Create a new extent
+                let new_ext = Ext4Extent::new(iblock, fblock, block_count as u16);
+                // Insert the new extent
+                self.insert_extent(inode_ref, leaf, &new_ext);
+                fblock
+            }
+        }
+    }
+
+    /// Insert a new extent into a leaf node of the extent tree. Return whether
+    /// the node needs to be split.
+    pub fn insert_extent(
+        &self,
+        inode_ref: &mut Ext4InodeRef,
+        leaf: &ExtentSearchPath,
+        new_ext: &Ext4Extent,
+    ) -> bool {
+        // Note: block data must be defined here to keep it alive
+        let mut block_data = Vec::<u8>::new();
+        let mut eh = if leaf.pblock != 0 {
+            // Load the extent node
+            block_data = self
+                .block_device
+                .read_offset(leaf.pblock as usize * BLOCK_SIZE);
+            // Load the next extent header
+            Ext4ExtentHeader::load_from_block(&block_data)
+        } else {
+            // Root node
+            inode_ref.inode.extent_header().clone()
+        };
+        // The position where the new extent should be inserted
+        let index = leaf.index.unwrap_err();
+        let targ_ext = eh.extent_mut_at(index);
+        let split: bool;
+
+        if targ_ext.is_uninit() {
+            // 1. The position has an uninitialized extent
+            *targ_ext = new_ext.clone();
+            split = false;
+        } else {
+            // 2. The position has a valid extent
+            // Insert the extent and move the following extents
+            let mut i = index;
+            while i < eh.entries_count() as usize {
+                *eh.extent_mut_at(i + 1) = *eh.extent_at(i);
+                i += 1;
+            }
+            *eh.extent_mut_at(index) = new_ext.clone();
+            eh.set_entries_count(eh.entries_count() + 1);
+            // Check if the extent node is full
+            split = eh.entries_count() >= eh.max_entries_count();
+        }
+
+        if !block_data.is_empty() {
+            self.block_device
+                .write_offset(leaf.pblock as usize * BLOCK_SIZE, &block_data);
+        } else {
+            self.write_back_inode_without_csum(inode_ref);
+        }
+
+        split
     }
 
     pub fn ext4_add_extent(
         &self,
         inode_ref: &Ext4InodeRef,
         depth: u16,
-        data: &[u32],
+        data: &[u8],
         extents: &mut Vec<Ext4Extent>,
         _first_level: bool,
     ) {
-        let extent_header = Ext4ExtentHeader::try_from(data).unwrap();
-        let extent_entries = extent_header.entries_count;
+        let extent_header = Ext4ExtentHeader::load_from_block(data);
+        let extent_entries = extent_header.entries_count();
         // log::info!("extent_entries {:x?}", extent_entries);
         if depth == 0 {
             for en in 0..extent_entries {
@@ -262,51 +193,8 @@ impl Ext4 {
             let mut block = ei_leaf_lo;
             block |= ((ei_leaf_hi as u32) << 31) << 1;
             let data = self.block_device.read_offset(block as usize * BLOCK_SIZE);
-            let data: Vec<u32> = unsafe { core::mem::transmute(data) };
+            // let data: Vec<u32> = unsafe { core::mem::transmute(data) };
             self.ext4_add_extent(inode_ref, depth - 1, &data, extents, false);
         }
-    }
-
-    pub fn ext4_fs_get_inode_dblk_idx(
-        &self,
-        inode_ref: &mut Ext4InodeRef,
-        iblock: &mut Ext4LogicBlockId,
-        fblock: &mut Ext4FsBlockId,
-        _extent_create: bool,
-    ) -> usize {
-        let current_block: Ext4FsBlockId;
-        let mut current_fsblk: Ext4FsBlockId = 0;
-        let mut blocks_count = 0;
-        self.ext4_extent_get_blocks(
-            inode_ref,
-            *iblock,
-            1,
-            &mut current_fsblk,
-            false,
-            &mut blocks_count,
-        );
-        current_block = current_fsblk;
-        *fblock = current_block;
-        EOK
-    }
-
-    pub fn ext4_fs_get_inode_dblk_idx_internal(
-        &self,
-        inode_ref: &mut Ext4InodeRef,
-        iblock: &mut Ext4LogicBlockId,
-        _fblock: &mut Ext4FsBlockId,
-        extent_create: bool,
-        _support_unwritten: bool,
-    ) {
-        let mut current_fsblk: Ext4FsBlockId = 0;
-        let mut blocks_count = 0;
-        self.ext4_extent_get_blocks(
-            inode_ref,
-            *iblock,
-            1,
-            &mut current_fsblk,
-            extent_create,
-            &mut blocks_count,
-        );
     }
 }

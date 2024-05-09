@@ -41,7 +41,7 @@ pub struct Ext4Inode {
     pub blocks: u32,
     pub flags: u32,
     pub osd1: u32,
-    pub block: [u32; 15],
+    pub block: [u32; 15], // Block bitmap or extent tree
     pub generation: u32,
     pub file_acl: u32,
     pub size_hi: u32,
@@ -83,11 +83,11 @@ impl Ext4Inode {
         self.mode |= mode;
     }
 
-    pub fn inode_type(&self, super_block: &Ext4Superblock) -> u32{
+    pub fn inode_type(&self, super_block: &Ext4Superblock) -> u32 {
         let mut v = self.mode;
 
-        if super_block.creator_os() == EXT4_SUPERBLOCK_OS_HURD{
-            v |= ((self.osd2.l_i_file_acl_high as u32 ) << 16) as u16;
+        if super_block.creator_os() == EXT4_SUPERBLOCK_OS_HURD {
+            v |= ((self.osd2.l_i_file_acl_high as u32) << 16) as u16;
         }
 
         (v & EXT4_INODE_MODE_TYPE_MASK) as u32
@@ -160,26 +160,6 @@ impl Ext4Inode {
         }
     }
 
-    pub fn extent_header(&mut self) -> *mut Ext4ExtentHeader {
-        let header_ptr = (&mut self.block) as *mut [u32; 15] as *mut Ext4ExtentHeader;
-        header_ptr
-    }
-
-    pub fn extent_tree_init(&mut self) {
-        let mut header = Ext4ExtentHeader::default();
-        header.set_depth(0);
-        header.set_entries_count(0);
-        header.set_generation(0);
-        header.set_magic();
-        header.set_max_entries_count(4 as u16);
-
-        unsafe {
-            let header_ptr = &header as *const Ext4ExtentHeader as *const u32;
-            let array_ptr = &mut self.block as *mut [u32; 15] as *mut u32;
-            core::ptr::copy_nonoverlapping(header_ptr, array_ptr, 3);
-        }
-    }
-
     pub fn blocks_count(&self) -> u64 {
         let mut blocks = self.blocks as u64;
         if self.osd2.l_i_blocks_high != 0 {
@@ -210,7 +190,7 @@ impl Ext4Inode {
         let index = (inode_id - 1) % inodes_per_group;
 
         let bg = Ext4BlockGroupDesc::load(block_device, super_block, group as usize).unwrap();
-        bg.inode_table_blk_num() as usize * BLOCK_SIZE + (index * inode_size as u32) as usize
+        bg.inode_table_first_block() as usize * BLOCK_SIZE + (index * inode_size as u32) as usize
     }
 
     fn read_from_disk(
@@ -298,6 +278,37 @@ impl Ext4Inode {
     ) -> Result<()> {
         self.set_checksum(super_block, inode_id);
         self.sync_to_disk_without_csum(block_device, super_block, inode_id)
+    }
+
+    /* Extent methods */
+
+    pub fn extent_header(&self) -> &'static Ext4ExtentHeader {
+        unsafe {
+            (&self.block as *const [u32; 15] as *const Ext4ExtentHeader)
+                .as_ref()
+                .unwrap()
+        }
+    }
+
+    pub fn extent_header_mut(&mut self) -> &'static mut Ext4ExtentHeader {
+        unsafe {
+            (&mut self.block as *mut [u32; 15] as *mut Ext4ExtentHeader)
+                .as_mut()
+                .unwrap()
+        }
+    }
+
+    pub fn extent_depth(&self) -> u16 {
+        self.extent_header().depth()
+    }
+
+    pub fn extent_tree_init(&mut self) {
+        let header = Ext4ExtentHeader::new(0, 4, 0, 0);
+        let header_ptr = &header as *const Ext4ExtentHeader as *const u32;
+        let array_ptr = &mut self.block as *mut [u32; 15] as *mut u32;
+        unsafe {
+            core::ptr::copy_nonoverlapping(header_ptr, array_ptr, 3);
+        }
     }
 }
 
