@@ -11,7 +11,7 @@ impl Ext4 {
         path.split("/").map(|s| s.to_string()).collect()
     }
 
-    pub fn ext4_generic_open(
+    pub(super) fn generic_open(
         &mut self,
         path: &str,
         flag: OpenFlags,
@@ -62,6 +62,7 @@ impl Ext4 {
         Ok(file)
     }
 
+    #[allow(unused)]
     pub fn ext4_open(&mut self, path: &str, flags: &str, file_expect: bool) -> Result<Ext4File> {
         // open flags
         let iflags = OpenFlags::from_str(flags).unwrap();
@@ -76,7 +77,7 @@ impl Ext4 {
             self.ext4_trans_start();
         }
         // open file
-        let res = self.ext4_generic_open(path, iflags, file_type, &self.get_root_inode_ref());
+        let res = self.generic_open(path, iflags, file_type, &self.get_root_inode_ref());
         res.map(|mut file| {
             // set mount point
             let mut ptr = Box::new(self.mount_point.clone());

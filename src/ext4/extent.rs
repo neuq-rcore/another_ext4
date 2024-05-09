@@ -38,7 +38,7 @@ impl Ext4 {
 
     /// Given a logic block id, find the corresponding fs block id.
     /// Return 0 if not found.
-    pub fn extent_get_pblock(&self, inode_ref: &mut Ext4InodeRef, iblock: LBlockId) -> PBlockId {
+    pub(super) fn extent_get_pblock(&self, inode_ref: &mut Ext4InodeRef, iblock: LBlockId) -> PBlockId {
         let path = self.find_extent(inode_ref, iblock);
         // Leaf is the last element of the path
         let leaf = path.last().unwrap();
@@ -65,7 +65,7 @@ impl Ext4 {
 
     /// Given a logic block id, find the corresponding fs block id.
     /// Create a new extent if not found.
-    pub fn extent_get_pblock_create(
+    pub(super) fn extent_get_pblock_create(
         &mut self,
         inode_ref: &mut Ext4InodeRef,
         iblock: LBlockId,
@@ -109,7 +109,7 @@ impl Ext4 {
 
     /// Insert a new extent into a leaf node of the extent tree. Return whether
     /// the node needs to be split.
-    pub fn insert_extent(
+    pub(super) fn insert_extent(
         &self,
         inode_ref: &mut Ext4InodeRef,
         leaf: &ExtentSearchPath,
@@ -159,42 +159,5 @@ impl Ext4 {
         }
 
         split
-    }
-
-    pub fn ext4_add_extent(
-        &self,
-        inode_ref: &Ext4InodeRef,
-        depth: u16,
-        data: &[u8],
-        extents: &mut Vec<Ext4Extent>,
-        _first_level: bool,
-    ) {
-        let extent_header = Ext4ExtentHeader::load_from_block(data);
-        let extent_entries = extent_header.entries_count();
-        // log::info!("extent_entries {:x?}", extent_entries);
-        if depth == 0 {
-            for en in 0..extent_entries {
-                let idx = (3 + en * 3) as usize;
-                let extent = Ext4Extent::try_from(&data[idx..]).unwrap();
-
-                extents.push(extent)
-            }
-            return;
-        }
-
-        for en in 0..extent_entries {
-            let idx = (3 + en * 3) as usize;
-            if idx == 12 {
-                break;
-            }
-            let extent_index = Ext4ExtentIndex::try_from(&data[idx..]).unwrap();
-            let ei_leaf_lo = extent_index.leaf_lo;
-            let ei_leaf_hi = extent_index.leaf_hi;
-            let mut block = ei_leaf_lo;
-            block |= ((ei_leaf_hi as u32) << 31) << 1;
-            let data = self.block_device.read_offset(block as usize * BLOCK_SIZE);
-            // let data: Vec<u32> = unsafe { core::mem::transmute(data) };
-            self.ext4_add_extent(inode_ref, depth - 1, &data, extents, false);
-        }
     }
 }

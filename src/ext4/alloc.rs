@@ -5,7 +5,7 @@ use crate::prelude::*;
 
 impl Ext4 {
     /// Allocate a new data block for an inode, return the physical block number
-    pub fn alloc_block(&mut self, inode_ref: &mut Ext4InodeRef, goal: PBlockId) -> PBlockId {
+    pub(super) fn alloc_block(&mut self, inode_ref: &mut Ext4InodeRef, goal: PBlockId) -> PBlockId {
         let bgid = goal / self.blocks_per_group as u64;
         let idx_in_bg = goal % self.blocks_per_group as u64;
 
@@ -48,7 +48,7 @@ impl Ext4 {
     }
 
     /// Append a data block for an inode, return a pair of (logical block id, physical block id)
-    pub fn inode_append_block(&mut self, inode_ref: &mut Ext4InodeRef) -> (LBlockId, PBlockId) {
+    pub(super) fn inode_append_block(&mut self, inode_ref: &mut Ext4InodeRef) -> (LBlockId, PBlockId) {
         let inode_size = inode_ref.inode.size();
         // The new logical block id
         let iblock = ((inode_size + BLOCK_SIZE as u64 - 1) / BLOCK_SIZE as u64) as u32;
@@ -60,7 +60,7 @@ impl Ext4 {
         (iblock, fblock)
     }
 
-    pub fn ext4_fs_inode_blocks_init(inode_ref: &mut Ext4InodeRef) {
+    pub(super) fn ext4_fs_inode_blocks_init(inode_ref: &mut Ext4InodeRef) {
         let inode = &mut inode_ref.inode;
         let mode = inode.mode;
         let inode_type = InodeMode::from_bits(mode & EXT4_INODE_MODE_TYPE_MASK as u16).unwrap();
@@ -87,7 +87,7 @@ impl Ext4 {
     }
 
     /// Allocate a new inode in the filesystem, returning the inode and its number
-    pub fn alloc_inode(&mut self, filetype: FileType) -> Ext4InodeRef {
+    pub(super) fn alloc_inode(&mut self, filetype: FileType) -> Ext4InodeRef {
         // Allocate an inode
         let is_dir = filetype == FileType::Directory;
         let id = self.do_alloc_inode(is_dir);

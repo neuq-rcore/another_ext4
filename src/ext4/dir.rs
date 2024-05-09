@@ -5,7 +5,7 @@ use crate::prelude::*;
 
 impl Ext4 {
     /// Find a directory entry that matches a given name under a parent directory
-    pub fn dir_find_entry(&self, parent: &mut Ext4InodeRef, name: &str) -> Result<Ext4DirEntry> {
+    pub(super) fn dir_find_entry(&self, parent: &mut Ext4InodeRef, name: &str) -> Result<Ext4DirEntry> {
         let inode_size: u32 = parent.inode.size;
         let total_blocks: u32 = inode_size / BLOCK_SIZE as u32;
         let mut iblock: LBlockId = 0;
@@ -46,7 +46,7 @@ impl Ext4 {
     }
 
     /// Add an entry to a directory
-    pub fn dir_add_entry(
+    pub(super) fn dir_add_entry(
         &mut self,
         parent: &mut Ext4InodeRef,
         child: &Ext4InodeRef,
@@ -192,7 +192,7 @@ impl Ext4 {
     pub fn ext4_dir_mk(&mut self, path: &str) -> Result<()> {
         // get open flags
         let iflags = OpenFlags::from_str("w").unwrap();
-        self.ext4_generic_open(
+        self.generic_open(
             path,
             iflags,
             FileType::Directory,
