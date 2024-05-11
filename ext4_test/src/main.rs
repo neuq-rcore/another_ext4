@@ -57,7 +57,7 @@ fn make_ext4() {
 fn open_ext4() -> Ext4 {
     let file = BlockFile::new("ext4.img");
     println!("creating ext4");
-    Ext4::load(Arc::new(file))
+    Ext4::load(Arc::new(file)).expect("open ext4 failed")
 }
 
 fn mkdir_test(ext4: &mut Ext4) {

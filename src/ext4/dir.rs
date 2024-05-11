@@ -6,7 +6,7 @@ use crate::prelude::*;
 impl Ext4 {
     /// Find a directory entry that matches a given name under a parent directory
     pub(super) fn dir_find_entry(&self, parent: &Ext4InodeRef, name: &str) -> Result<Ext4DirEntry> {
-        info!("dir find entry: {} under parent {}", name, parent.inode_id);
+        info!("Dir find entry: {} under parent {}", name, parent.inode_id);
         let inode_size: u32 = parent.inode.size;
         let total_blocks: u32 = inode_size / BLOCK_SIZE as u32;
         let mut iblock: LBlockId = 0;
@@ -54,7 +54,7 @@ impl Ext4 {
         path: &str,
     ) -> Result<()> {
         info!(
-            "Adding entry: parent {}, child {}, path {}",
+            "Dir add entry: parent {}, child {}, path {}",
             parent.inode_id, child.inode_id, path
         );
         let inode_size = parent.inode.size();
@@ -68,12 +68,9 @@ impl Ext4 {
             // Load the parent block from disk
             let mut data = self.block_device.read_offset(fblock as usize * BLOCK_SIZE);
             let mut ext4_block = Ext4Block {
-                logical_block_id: iblock,
-                disk_block_id: fblock,
+                pblock_id: fblock,
                 block_data: &mut data,
-                dirty: false,
             };
-            debug!("Insert dirent to old block {}", fblock);
             // Try inserting the entry to parent block
             self.insert_entry_to_old_block(&mut ext4_block, child, path)?;
             // Current block has no enough space
@@ -82,17 +79,14 @@ impl Ext4 {
 
         // No free block found - needed to allocate a new data block
         // Append a new data block
-        let (iblock, fblock) = self.inode_append_block(parent)?;
+        let (_, fblock) = self.inode_append_block(parent)?;
         // Load new block
         let block_device = self.block_device.clone();
         let mut data = block_device.read_offset(fblock as usize * BLOCK_SIZE);
         let mut new_block = Ext4Block {
-            logical_block_id: iblock,
-            disk_block_id: fblock,
+            pblock_id: fblock,
             block_data: &mut data,
-            dirty: false,
         };
-        debug!("Insert dirent to new block {}", fblock);
         // Write the entry to block
         self.insert_entry_to_new_block(&mut new_block, child, path)
     }
@@ -197,7 +191,7 @@ impl Ext4 {
             &self.get_root_inode_ref(),
         )
         .map(|_| {
-            info!("ext4_dir_mk: {}", path);
+            info!("ext4_dir_mk: {} ok", path);
         })
     }
 }

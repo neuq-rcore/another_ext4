@@ -4,7 +4,6 @@
 //! linear array of directory entries.
 
 use super::crc::*;
-use super::Ext4Block;
 use super::Ext4Superblock;
 use crate::constants::*;
 use crate::prelude::*;
@@ -148,16 +147,6 @@ impl Ext4DirEntry {
         }
         csum = ext4_crc32c(csum, &data[..], 0xff4);
         csum
-    }
-
-    pub fn write_to_blk(&self, dst_blk: &mut Ext4Block, offset: usize) {
-        let count = core::mem::size_of::<Ext4DirEntry>() / core::mem::size_of::<u8>();
-        let data = unsafe { core::slice::from_raw_parts(self as *const _ as *const u8, count) };
-        dst_blk.block_data.splice(
-            offset..offset + core::mem::size_of::<Ext4DirEntry>(),
-            data.iter().cloned(),
-        );
-        // assert_eq!(dst_blk.block_data[offset..offset + core::mem::size_of::<Ext4DirEntry>()], data[..]);
     }
 
     pub fn copy_to_byte_slice(&self, slice: &mut [u8], offset: usize) {

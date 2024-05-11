@@ -59,15 +59,11 @@ pub struct Ext4Inode {
     pub i_version_hi: u32,   // 64位版本的高32位
 }
 
-impl TryFrom<&[u8]> for Ext4Inode {
-    type Error = u64;
-    fn try_from(data: &[u8]) -> core::result::Result<Self, u64> {
-        let data = &data[..size_of::<Ext4Inode>()];
-        Ok(unsafe { core::ptr::read(data.as_ptr() as *const _) })
-    }
-}
-
 impl Ext4Inode {
+    pub fn from_bytes(bytes: &[u8]) -> Self {
+        unsafe { *(bytes.as_ptr() as *const Ext4Inode) }
+    }
+
     pub fn flags(&self) -> u32 {
         self.flags
     }
@@ -210,7 +206,7 @@ impl Ext4Inode {
         let pos = Ext4Inode::inode_disk_pos(super_block, block_device.clone(), inode_id);
         let data = block_device.read_offset(pos);
         let inode_data = &data[..core::mem::size_of::<Ext4Inode>()];
-        Ext4Inode::try_from(inode_data).unwrap()
+        Ext4Inode::from_bytes(inode_data)
     }
 
     fn copy_to_byte_slice(&self, slice: &mut [u8]) {
@@ -303,10 +299,6 @@ impl Ext4Inode {
         ExtentNodeMut::from_bytes(unsafe {
             core::slice::from_raw_parts_mut(self.block.as_mut_ptr() as *mut u8, 60)
         })
-    }
-
-    pub fn extent_depth(&mut self) -> u16 {
-        self.extent().header().depth()
     }
 
     /// Initialize the `flags` and `block` field of inode. Mark the

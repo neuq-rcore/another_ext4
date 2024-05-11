@@ -47,7 +47,7 @@ impl Ext4 {
 
         bg.sync_to_disk_with_csum(self.block_device.clone(), bgid as usize, &self.super_block);
 
-        info!("Alloc block {}", fblock);
+        info!("Alloc block {} ok", fblock);
         Ok(fblock)
     }
 
@@ -112,7 +112,7 @@ impl Ext4 {
         // Sync the inode to disk
         self.write_back_inode_with_csum(&mut inode_ref);
 
-        info!("Alloc inode {}", inode_ref.inode_id);
+        info!("Alloc inode {} ok", inode_ref.inode_id);
         Ok(inode_ref)
     }
 

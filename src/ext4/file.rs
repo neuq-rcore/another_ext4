@@ -18,14 +18,13 @@ impl Ext4 {
         ftype: FileType,
         parent_inode: &Ext4InodeRef,
     ) -> Result<Ext4File> {
+        info!("generic open: {}", path);
         // Search from the given parent inode
         let mut parent = parent_inode.clone();
         let search_path = Self::split_path(path);
 
-        info!("generic open: {}", path);
         for (i, path) in search_path.iter().enumerate() {
             let res = self.dir_find_entry(&parent, path);
-            debug!("dir_find_entry: {:?}", res);
             match res {
                 Ok(entry) => {
                     parent = self.get_inode_ref(entry.inode());
