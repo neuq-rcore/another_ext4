@@ -21,9 +21,11 @@ impl Ext4 {
         // Search from the given parent inode
         let mut parent = parent_inode.clone();
         let search_path = Self::split_path(path);
-
+        
+        info!("generic open: {}", path);
         for (i, path) in search_path.iter().enumerate() {
-            let res = self.dir_find_entry(&mut parent, path);
+            let res = self.dir_find_entry(&parent, path);
+            debug!("dir_find_entry: {:?}", res);
             match res {
                 Ok(entry) => {
                     parent = self.get_inode_ref(entry.inode());
@@ -42,7 +44,6 @@ impl Ext4 {
                     } else {
                         self.alloc_inode(FileType::Directory)
                     };
-                    Self::ext4_fs_inode_blocks_init(&mut child);
                     // Link the new inode
                     let r = self.ext4_link(&mut parent, &mut child, path);
                     if r != EOK {
@@ -55,7 +56,6 @@ impl Ext4 {
                 }
             }
         }
-
         // Reach the target
         let mut file = Ext4File::default();
         file.inode = parent.inode_id;

@@ -52,8 +52,8 @@ impl Ext4ExtentHeader {
     }
 
     /// Loads an extent header from a data block.
-    pub fn load_from_block(block_data: &[u8]) -> Self {
-        unsafe { *(block_data.as_ptr() as *const Ext4ExtentHeader) }
+    pub fn load_from_block(block_data: &[u8]) -> &Self {
+        unsafe { &*(block_data.as_ptr() as *const Ext4ExtentHeader) }
     }
 
     // 获取extent header的魔数
@@ -105,62 +105,6 @@ impl Ext4ExtentHeader {
     pub fn set_generation(&mut self, generation: u32) {
         self.generation = generation;
     }
-
-    pub fn extent_at(&self, index: usize) -> &'static Ext4Extent {
-        unsafe { &*((self as *const Self).add(1) as *const Ext4Extent).add(index) }
-    }
-
-    pub fn extent_mut_at(&mut self, index: usize) -> &'static mut Ext4Extent {
-        unsafe { &mut *((self as *mut Self).add(1) as *mut Ext4Extent).add(index) }
-    }
-
-    pub fn extent_index_at(&self, index: usize) -> &'static Ext4ExtentIndex {
-        unsafe { &*((self as *const Self).add(1) as *const Ext4ExtentIndex).add(index) }
-    }
-
-    pub fn extent_index_mut_at(&mut self, index: usize) -> &'static mut Ext4ExtentIndex {
-        unsafe { &mut *((self as *mut Self).add(1) as *mut Ext4ExtentIndex).add(index) }
-    }
-
-    /// Find the extent that covers the given logical block number.
-    ///
-    /// Return `Ok(index)` if found, and `eh.extent_at(index)` is the extent that covers
-    /// the given logical block number. Return `Err(index)` if not found, and `index` is the
-    /// position where the new extent should be inserted.
-    pub fn extent_search(&self, lblock: LBlockId) -> core::result::Result<usize, usize> {
-        let mut i = 0;
-        while i < self.entries_count as usize {
-            let extent = self.extent_at(i);
-            if extent.start_lblock() <= lblock {
-                if extent.start_lblock() + (extent.block_count() as LBlockId) < lblock {
-                    return if extent.is_uninit() { Err(i) } else { Ok(i) };
-                }
-                i += 1;
-            } else {
-                break;
-            }
-        }
-        Err(i)
-    }
-
-    /// Find the extent index that covers the given logical block number. The extent index
-    /// gives the next lower node to search.
-    ///
-    /// Return `Ok(index)` if found, and `eh.extent_index_at(index)` is the target extent index.
-    /// Return `Err(index)` if not found, and `index` is the position where the new extent index
-    /// should be inserted.
-    pub fn extent_index_search(&self, lblock: LBlockId) -> core::result::Result<usize, usize> {
-        let mut i = 0;
-        while i < self.entries_count as usize {
-            let extent_index = self.extent_index_at(i);
-            if extent_index.first_block <= lblock {
-                i += 1;
-            } else {
-                return Ok(i - 1);
-            }
-        }
-        Err(i)
-    }
 }
 
 #[derive(Debug, Default, Clone, Copy)]
@@ -178,14 +122,6 @@ pub struct Ext4ExtentIndex {
     pub leaf_hi: u16,
 
     pub padding: u16,
-}
-
-impl<T> TryFrom<&[T]> for Ext4ExtentIndex {
-    type Error = u64;
-    fn try_from(data: &[T]) -> core::result::Result<Self, u64> {
-        let data = &data[..size_of::<Ext4ExtentIndex>()];
-        Ok(unsafe { core::ptr::read(data.as_ptr() as *const _) })
-    }
 }
 
 impl Ext4ExtentIndex {
@@ -214,14 +150,6 @@ pub struct Ext4Extent {
 
     /// Lower 32-bits of the block number to which this extent points.
     start_lo: u32,
-}
-
-impl<T> TryFrom<&[T]> for Ext4Extent {
-    type Error = u64;
-    fn try_from(data: &[T]) -> core::result::Result<Self, u64> {
-        let data = &data[..size_of::<Ext4Extent>()];
-        Ok(unsafe { core::ptr::read(data.as_ptr() as *const _) })
-    }
 }
 
 impl Ext4Extent {
@@ -297,6 +225,172 @@ impl Ext4Extent {
             return false;
         }
         return true;
+    }
+}
+
+/// Interpret an immutable byte slice as an extent node. Provide methods to
+/// access the extent header and the following extents or extent indices.
+///
+/// The underlying `raw_data` could be of `[u8;15]` (root node) or a
+/// data block `[u8;BLOCK_SIZE]` (other node).
+pub struct ExtentNode<'a> {
+    raw_data: &'a [u8],
+}
+
+impl<'a> ExtentNode<'a> {
+    /// Interpret a byte slice as an extent node
+    pub fn from_bytes(raw_data: &'a [u8]) -> Self {
+        Self { raw_data }
+    }
+
+    /// Get a immutable reference to the extent header
+    pub fn header(&self) -> &Ext4ExtentHeader {
+        unsafe { &*(self.raw_data.as_ptr() as *const Ext4ExtentHeader) }
+    }
+
+    /// Get a immutable reference to the extent at a given index
+    pub fn extent_at(&self, index: usize) -> &Ext4Extent {
+        unsafe {
+            &*((self.header() as *const Ext4ExtentHeader).add(1) as *const Ext4Extent).add(index)
+        }
+    }
+
+    /// Get a immmutable reference to the extent indexat a given index
+    pub fn extent_index_at(&self, index: usize) -> &Ext4ExtentIndex {
+        unsafe {
+            &*((self.header() as *const Ext4ExtentHeader).add(1) as *const Ext4ExtentIndex)
+                .add(index)
+        }
+    }
+
+    /// Find the extent that covers the given logical block number.
+    ///
+    /// Return `Ok(index)` if found, and `eh.extent_at(index)` is the extent that covers
+    /// the given logical block number. Return `Err(index)` if not found, and `index` is the
+    /// position where the new extent should be inserted.
+    pub fn extent_search(&self, lblock: LBlockId) -> core::result::Result<usize, usize> {
+        let mut i = 0;
+        while i < self.header().entries_count as usize {
+            let extent = self.extent_at(i);
+            if extent.start_lblock() <= lblock {
+                if extent.start_lblock() + (extent.block_count() as LBlockId) > lblock {
+                    return if extent.is_uninit() { Err(i) } else { Ok(i) };
+                }
+                i += 1;
+            } else {
+                break;
+            }
+        }
+        Err(i)
+    }
+
+    /// Find the extent index that covers the given logical block number. The extent index
+    /// gives the next lower node to search.
+    ///
+    /// Return `Ok(index)` if found, and `eh.extent_index_at(index)` is the target extent index.
+    /// Return `Err(index)` if not found, and `index` is the position where the new extent index
+    /// should be inserted.
+    pub fn extent_index_search(&self, lblock: LBlockId) -> core::result::Result<usize, usize> {
+        let mut i = 0;
+        self.print();
+        while i < self.header().entries_count as usize {
+            let extent_index = self.extent_index_at(i);
+            if extent_index.first_block <= lblock {
+                i += 1;
+            } else {
+                return Ok(i - 1);
+            }
+        }
+        Err(i)
+    }
+
+    pub fn print(&self) {
+        debug!("Extent header count {}", self.header().entries_count());
+        let mut i = 0;
+        while i < self.header().entries_count() as usize {
+            let ext = self.extent_at(i);
+            debug!(
+                "extent[{}] start_lblock={}, start_pblock={}, len={}",
+                i,
+                ext.start_lblock(),
+                ext.start_pblock(),
+                ext.block_count()
+            );
+            i += 1;
+        }
+    }
+}
+
+/// Interpret a mutable byte slice as an extent node. Provide methods to
+/// modify the extent header and the following extents or extent indices.
+///
+/// The underlying `raw_data` could be of `[u8;15]` (root node) or a
+/// data block `[u8;BLOCK_SIZE]` (other node).
+pub struct ExtentNodeMut<'a> {
+    raw_data: &'a mut [u8],
+}
+
+impl<'a> ExtentNodeMut<'a> {
+    /// Interpret a byte slice as an extent node
+    pub fn from_bytes(raw_data: &'a mut [u8]) -> Self {
+        Self { raw_data }
+    }
+
+    /// Get a immutable reference to the extent header
+    pub fn header(&self) -> &Ext4ExtentHeader {
+        unsafe { &*(self.raw_data.as_ptr() as *const Ext4ExtentHeader) }
+    }
+
+    /// Get a mutable reference to the extent header
+    pub fn header_mut(&mut self) -> &mut Ext4ExtentHeader {
+        unsafe { &mut *(self.raw_data.as_mut_ptr() as *mut Ext4ExtentHeader) }
+    }
+
+    /// Get a immutable reference to the extent at a given index
+    pub fn extent_at(&self, index: usize) -> &'static Ext4Extent {
+        unsafe {
+            &*((self.header() as *const Ext4ExtentHeader).add(1) as *const Ext4Extent).add(index)
+        }
+    }
+
+    /// Get a mutable reference to the extent at a given index
+    pub fn extent_mut_at(&mut self, index: usize) -> &'static mut Ext4Extent {
+        unsafe {
+            &mut *((self.header_mut() as *mut Ext4ExtentHeader).add(1) as *mut Ext4Extent)
+                .add(index)
+        }
+    }
+
+    /// Get a immutable reference to the extent index at a given index
+    pub fn extent_index_at(&self, index: usize) -> &'static Ext4ExtentIndex {
+        unsafe {
+            &*((self.header() as *const Ext4ExtentHeader).add(1) as *const Ext4ExtentIndex)
+                .add(index)
+        }
+    }
+
+    /// Get a mutable reference to the extent index at a given index
+    pub fn extent_index_mut_at(&mut self, index: usize) -> &'static mut Ext4ExtentIndex {
+        unsafe {
+            &mut *((self.header_mut() as *mut Ext4ExtentHeader).add(1) as *mut Ext4ExtentIndex)
+                .add(index)
+        }
+    }
+
+    pub fn print(&self) {
+        debug!("Extent header count {}", self.header().entries_count());
+        let mut i = 0;
+        while i < self.header().entries_count() as usize {
+            let ext = self.extent_at(i);
+            debug!(
+                "extent[{}] start_lblock={}, start_pblock={}, len={}",
+                i,
+                ext.start_lblock(),
+                ext.start_pblock(),
+                ext.block_count()
+            );
+            i += 1;
+        }
     }
 }
 

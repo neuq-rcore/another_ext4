@@ -5,7 +5,8 @@ use crate::prelude::*;
 
 impl Ext4 {
     /// Find a directory entry that matches a given name under a parent directory
-    pub(super) fn dir_find_entry(&self, parent: &mut Ext4InodeRef, name: &str) -> Result<Ext4DirEntry> {
+    pub(super) fn dir_find_entry(&self, parent: &Ext4InodeRef, name: &str) -> Result<Ext4DirEntry> {
+        info!("dir find entry: {} under parent {}", name, parent.inode_id);
         let inode_size: u32 = parent.inode.size;
         let total_blocks: u32 = inode_size / BLOCK_SIZE as u32;
         let mut iblock: LBlockId = 0;
@@ -14,9 +15,9 @@ impl Ext4 {
             // Get the fs block id
             let fblock = self.extent_get_pblock(parent, iblock);
             // Load block from disk
-            let mut block_data = self.block_device.read_offset(fblock as usize * BLOCK_SIZE);
+            let block_data = self.block_device.read_offset(fblock as usize * BLOCK_SIZE);
             // Find the entry in block
-            let res = Self::find_entry_in_block(&mut block_data, name);
+            let res = Self::find_entry_in_block(&block_data, name);
             if let Ok(r) = res {
                 return Ok(r);
             }
@@ -32,6 +33,7 @@ impl Ext4 {
         let mut offset = 0;
         while offset < block_data.len() {
             let de = Ext4DirEntry::try_from(&block_data[offset..]).unwrap();
+            debug!("de {:?}", de.rec_len());
             offset += de.rec_len() as usize;
             // Unused dir entry
             if de.unused() {
@@ -52,15 +54,18 @@ impl Ext4 {
         child: &Ext4InodeRef,
         path: &str,
     ) -> usize {
-        let block_size = self.super_block.block_size();
+        info!(
+            "Adding entry: parent {}, child {}, path {}",
+            parent.inode_id, child.inode_id, path
+        );
         let inode_size = parent.inode.size();
-        let total_blocks = inode_size as u32 / block_size;
+        let total_blocks = inode_size as u32 / BLOCK_SIZE as u32;
 
         // Try finding a block with enough space
         let mut iblock: LBlockId = 0;
         while iblock < total_blocks {
-            // Get the parent physical block id
-            let fblock = self.extent_get_pblock(parent, iblock);
+            // Get the parent physical block id, create if not exist
+            let fblock = self.extent_get_pblock_create(parent, iblock, 1);
             // Load the parent block from disk
             let mut data = self.block_device.read_offset(fblock as usize * BLOCK_SIZE);
             let mut ext4_block = Ext4Block {
@@ -69,6 +74,7 @@ impl Ext4 {
                 block_data: &mut data,
                 dirty: false,
             };
+            debug!("Insert dirent to old block {}", fblock);
             // Try inserting the entry to parent block
             let r = self.insert_entry_to_old_block(&mut ext4_block, child, path);
             if r == EOK {
@@ -90,6 +96,7 @@ impl Ext4 {
             block_data: &mut data,
             dirty: false,
         };
+        debug!("Insert dirent to new block {}", fblock);
         // Write the entry to block
         self.insert_entry_to_new_block(&mut new_block, child, path);
 
@@ -198,6 +205,8 @@ impl Ext4 {
             FileType::Directory,
             &self.get_root_inode_ref(),
         )
-        .map(|_| ())
+        .map(|_| {
+            info!("ext4_dir_mk: {}", path);
+        })
     }
 }

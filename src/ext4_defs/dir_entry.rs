@@ -12,7 +12,7 @@ use alloc::string::FromUtf8Error;
 
 #[repr(C)]
 pub union Ext4DirEnInner {
-    pub name_length_high: u8,     // 高8位的文件名长度
+    pub name_length_high: u8, // 高8位的文件名长度
     pub inode_type: FileType, // 引用的inode的类型（在rev >= 0.5中）
 }
 
@@ -225,8 +225,7 @@ pub enum FileType {
 }
 
 pub fn inode_mode2file_type(inode_mode: u16) -> FileType {
-    let file_type = (inode_mode & EXT4_INODE_MODE_TYPE_MASK) as usize;
-    match file_type {
+    match inode_mode & EXT4_INODE_MODE_TYPE_MASK {
         EXT4_INODE_MODE_FILE => FileType::RegularFile,
         EXT4_INODE_MODE_DIRECTORY => FileType::Directory,
         EXT4_INODE_MODE_CHARDEV => FileType::CharacterDev,
@@ -239,7 +238,7 @@ pub fn inode_mode2file_type(inode_mode: u16) -> FileType {
 }
 
 pub fn file_type2inode_mode(dirent_type: FileType) -> u16 {
-    let inode_mode = match dirent_type {
+    match dirent_type {
         FileType::RegularFile => EXT4_INODE_MODE_FILE,
         FileType::Directory => EXT4_INODE_MODE_DIRECTORY,
         FileType::SymLink => EXT4_INODE_MODE_SOFTLINK,
@@ -248,6 +247,5 @@ pub fn file_type2inode_mode(dirent_type: FileType) -> u16 {
         FileType::Fifo => EXT4_INODE_MODE_FIFO,
         FileType::Socket => EXT4_INODE_MODE_SOCKET,
         _ => EXT4_INODE_MODE_FILE,
-    };
-    inode_mode as u16
+    }
 }

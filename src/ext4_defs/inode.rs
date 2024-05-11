@@ -12,6 +12,7 @@ use super::BlockDevice;
 use super::Ext4BlockGroupDesc;
 use super::Ext4ExtentHeader;
 use super::Ext4Superblock;
+use super::{ExtentNode, ExtentNodeMut};
 use crate::constants::*;
 use crate::prelude::*;
 
@@ -290,27 +291,29 @@ impl Ext4Inode {
 
     /* Extent methods */
 
-    pub fn extent_header(&self) -> &'static Ext4ExtentHeader {
-        unsafe {
-            (&self.block as *const [u32; 15] as *const Ext4ExtentHeader)
-                .as_ref()
-                .unwrap()
-        }
+    /// Get the immutable extent root node
+    pub fn extent(&self) -> ExtentNode {
+        ExtentNode::from_bytes(unsafe {
+            core::slice::from_raw_parts(self.block.as_ptr() as *const u8, 60)
+        })
     }
 
-    pub fn extent_header_mut(&mut self) -> &'static mut Ext4ExtentHeader {
-        unsafe {
-            (&mut self.block as *mut [u32; 15] as *mut Ext4ExtentHeader)
-                .as_mut()
-                .unwrap()
-        }
+    /// Get the mutable extent root node
+    pub fn extent_mut(&mut self) -> ExtentNodeMut {
+        ExtentNodeMut::from_bytes(unsafe {
+            core::slice::from_raw_parts_mut(self.block.as_mut_ptr() as *mut u8, 60)
+        })
     }
 
-    pub fn extent_depth(&self) -> u16 {
-        self.extent_header().depth()
+    pub fn extent_depth(&mut self) -> u16 {
+        self.extent().header().depth()
     }
 
-    pub fn extent_tree_init(&mut self) {
+    /// Initialize the `flags` and `block` field of inode. Mark the
+    /// inode to use extent for block mapping. Initialize the root
+    /// node of the extent tree
+    pub fn extent_init(&mut self) {
+        self.set_flags(EXT4_INODE_FLAG_EXTENTS);
         let header = Ext4ExtentHeader::new(0, 4, 0, 0);
         let header_ptr = &header as *const Ext4ExtentHeader as *const u32;
         let array_ptr = &mut self.block as *mut [u32; 15] as *mut u32;

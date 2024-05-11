@@ -3,7 +3,7 @@
 use crate::prelude::*;
 use bitflags::bitflags;
 
-pub const EXT4_INODE_FLAG_EXTENTS: usize = 0x00080000; /* Inode uses extents */
+pub const EXT4_INODE_FLAG_EXTENTS: u32 = 0x00080000; /* Inode uses extents */
 pub const EXT4_MIN_BLOCK_GROUP_DESCRIPTOR_SIZE: u16 = 32;
 pub const EXT4_MAX_BLOCK_GROUP_DESCRIPTOR_SIZE: u16 = 64;
 pub const EXT4_CRC32_INIT: u32 = 0xFFFFFFFF;
@@ -13,13 +13,13 @@ pub const EXT_UNWRITTEN_MAX_LEN: u16 = 65535;
 
 pub const EXT4_GOOD_OLD_INODE_SIZE: u16 = 128;
 
-pub const EXT4_INODE_MODE_FIFO: usize = 0x1000;
-pub const EXT4_INODE_MODE_CHARDEV: usize = 0x2000;
-pub const EXT4_INODE_MODE_DIRECTORY: usize = 0x4000;
-pub const EXT4_INODE_MODE_BLOCKDEV: usize = 0x6000;
-pub const EXT4_INODE_MODE_FILE: usize = 0x8000;
-pub const EXT4_INODE_MODE_SOFTLINK: usize = 0xA000;
-pub const EXT4_INODE_MODE_SOCKET: usize = 0xC000;
+pub const EXT4_INODE_MODE_FIFO: u16 = 0x1000;
+pub const EXT4_INODE_MODE_CHARDEV: u16 = 0x2000;
+pub const EXT4_INODE_MODE_DIRECTORY: u16 = 0x4000;
+pub const EXT4_INODE_MODE_BLOCKDEV: u16 = 0x6000;
+pub const EXT4_INODE_MODE_FILE: u16 = 0x8000;
+pub const EXT4_INODE_MODE_SOFTLINK: u16 = 0xA000;
+pub const EXT4_INODE_MODE_SOCKET: u16 = 0xC000;
 pub const EXT4_INODE_MODE_TYPE_MASK: u16 = 0xF000;
 
 pub const EXT_MAX_BLOCKS: LBlockId = core::u32::MAX;
@@ -73,19 +73,6 @@ pub const EMLINK: usize = 31; /* Too many links */
 pub const EPIPE: usize = 32; /* Broken pipe */
 pub const EDOM: usize = 33; /* Math argument out of domain of func */
 pub const ERANGE: usize = 34; /* Math result not representable */
-
-bitflags! {
-    #[derive(Debug, PartialEq, Eq)]
-    pub struct InodeMode: u16 {
-        const S_IFSOCK = 0xC000;
-        const S_IFLNK = 0xA000;
-        const S_IFREG = 0x8000;
-        const S_IFBLK = 0x6000;
-        const S_IFDIR = 0x4000;
-        const S_IFCHR = 0x2000;
-        const S_IFIFO = 0x1000;
-    }
-}
 
 pub const BASE_OFFSET: usize = 1024;
 pub const BLOCK_SIZE: usize = 4096;
