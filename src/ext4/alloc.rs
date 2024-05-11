@@ -5,7 +5,11 @@ use crate::prelude::*;
 
 impl Ext4 {
     /// Allocate a new data block for an inode, return the physical block number
-    pub(super) fn alloc_block(&mut self, inode_ref: &mut Ext4InodeRef, goal: PBlockId) -> PBlockId {
+    pub(super) fn alloc_block(
+        &mut self,
+        inode_ref: &mut Ext4InodeRef,
+        goal: PBlockId,
+    ) -> Result<PBlockId> {
         let bgid = goal / self.super_block.blocks_per_group() as u64;
         let idx_in_bg = goal % self.super_block.blocks_per_group() as u64;
 
@@ -18,10 +22,9 @@ impl Ext4 {
         let raw_bitmap = &mut self.block_device.read_offset(block_bmap_offset);
         let mut bitmap = Bitmap::new(raw_bitmap);
         // Find and first free block
-        let fblock = bitmap.find_and_set_first_clear_bit(idx_in_bg as usize, 8 * BLOCK_SIZE);
-        if fblock.is_none() {
-            return 0;
-        }
+        let fblock = bitmap
+            .find_and_set_first_clear_bit(idx_in_bg as usize, 8 * BLOCK_SIZE)
+            .ok_or(Ext4Error::new(ErrCode::ENOSPC))? as PBlockId;
 
         // Set block group checksum
         bg.set_block_bitmap_csum(&self.super_block, &bitmap);
@@ -44,29 +47,28 @@ impl Ext4 {
 
         bg.sync_to_disk_with_csum(self.block_device.clone(), bgid as usize, &self.super_block);
 
-        info!("Alloc block {}", fblock.unwrap());
-
-        fblock.unwrap() as PBlockId
+        info!("Alloc block {}", fblock);
+        Ok(fblock)
     }
 
     /// Append a data block for an inode, return a pair of (logical block id, physical block id)
     pub(super) fn inode_append_block(
         &mut self,
         inode_ref: &mut Ext4InodeRef,
-    ) -> (LBlockId, PBlockId) {
+    ) -> Result<(LBlockId, PBlockId)> {
         let inode_size = inode_ref.inode.size();
         // The new logical block id
         let iblock = ((inode_size + BLOCK_SIZE as u64 - 1) / BLOCK_SIZE as u64) as u32;
         // Check the extent tree to get the physical block id
-        let fblock = self.extent_get_pblock_create(inode_ref, iblock, 1);
+        let fblock = self.extent_get_pblock_create(inode_ref, iblock, 1)?;
         // Update the inode
         inode_ref.inode.set_size(inode_size + BLOCK_SIZE as u64);
         self.write_back_inode_with_csum(inode_ref);
-        (iblock, fblock)
+        Ok((iblock, fblock))
     }
 
     /// Allocate(initialize) the root inode of the file system
-    pub(super) fn alloc_root_inode(&mut self) -> Ext4InodeRef {
+    pub(super) fn alloc_root_inode(&mut self) -> Result<Ext4InodeRef> {
         let mut inode = Ext4Inode::default();
         inode.set_mode(0o777 | EXT4_INODE_MODE_DIRECTORY);
         inode.extent_init();
@@ -75,22 +77,21 @@ impl Ext4 {
         }
         let mut root = Ext4InodeRef::new(EXT4_ROOT_INO, inode);
         let root_self = root.clone();
-        
+
         // Add `.` and `..` entries
-        self.dir_add_entry(&mut root, &root_self, ".");
-        self.dir_add_entry(&mut root, &root_self, "..");
+        self.dir_add_entry(&mut root, &root_self, ".")?;
+        self.dir_add_entry(&mut root, &root_self, "..")?;
         root.inode.links_count += 2;
 
         self.write_back_inode_with_csum(&mut root);
-
-        root
+        Ok(root)
     }
 
     /// Allocate a new inode in the file system, returning the inode and its number
-    pub(super) fn alloc_inode(&mut self, filetype: FileType) -> Ext4InodeRef {
+    pub(super) fn alloc_inode(&mut self, filetype: FileType) -> Result<Ext4InodeRef> {
         // Allocate an inode
         let is_dir = filetype == FileType::Directory;
-        let id = self.do_alloc_inode(is_dir);
+        let id = self.do_alloc_inode(is_dir)?;
 
         // Initialize the inode
         let mut inode = Ext4Inode::default();
@@ -112,12 +113,11 @@ impl Ext4 {
         self.write_back_inode_with_csum(&mut inode_ref);
 
         info!("Alloc inode {}", inode_ref.inode_id);
-
-        inode_ref
+        Ok(inode_ref)
     }
 
     /// Allocate a new inode in the filesystem, returning its number.
-    fn do_alloc_inode(&mut self, is_dir: bool) -> u32 {
+    fn do_alloc_inode(&mut self, is_dir: bool) -> Result<u32> {
         let mut bgid = 0;
         let bg_count = self.super_block.block_groups_count();
 
@@ -182,11 +182,10 @@ impl Ext4 {
             // Compute the absolute i-node number
             let inodes_per_group = self.super_block.inodes_per_group();
             let inode_num = bgid * inodes_per_group + (idx_in_bg + 1);
-            log::info!("alloc inode {}", inode_num);
 
-            return inode_num;
+            return Ok(inode_num);
         }
         log::info!("no free inode");
-        0
+        Err(Ext4Error::new(ErrCode::ENOSPC))
     }
 }

@@ -58,15 +58,28 @@ impl Default for Ext4DirEntry {
     }
 }
 
-impl<T> TryFrom<&[T]> for Ext4DirEntry {
-    type Error = u64;
-    fn try_from(data: &[T]) -> core::result::Result<Self, u64> {
-        let data = data;
-        Ok(unsafe { core::ptr::read(data.as_ptr() as *const _) })
-    }
-}
-
 impl Ext4DirEntry {
+    /// Create a new directory entry
+    pub fn new(inode: u32, rec_len: u16, name: &str, dirent_type: FileType) -> Self {
+        let mut name_bytes = [0u8; 255];
+        let name_len = name.as_bytes().len();
+        name_bytes[..name_len].copy_from_slice(name.as_bytes());
+        Self {
+            inode,
+            rec_len,
+            name_len: name_len as u8,
+            inner: Ext4DirEnInner {
+                inode_type: dirent_type,
+            },
+            name: name_bytes,
+        }
+    }
+
+    /// Load a directory entry from bytes
+    pub fn from_bytes(bytes: &[u8]) -> Self {
+        unsafe { core::ptr::read(bytes.as_ptr() as *const _) }
+    }
+
     pub fn name(&self) -> core::result::Result<String, FromUtf8Error> {
         let name_len = self.name_len as usize;
         let name = &self.name[..name_len];
@@ -82,6 +95,7 @@ impl Ext4DirEntry {
         self.name[..name.len()].copy_from_slice(name.as_bytes());
     }
 
+    /// Distance to the next directory entry
     pub fn rec_len(&self) -> u16 {
         self.rec_len
     }
@@ -167,7 +181,7 @@ pub struct Ext4DirEntryTail {
 }
 
 impl Ext4DirEntryTail {
-    pub fn from(data: &mut [u8], blocksize: usize) -> Option<Self> {
+    pub fn from_bytes(data: &mut [u8], blocksize: usize) -> Option<Self> {
         unsafe {
             let ptr = data as *mut [u8] as *mut u8;
             let t = *(ptr.add(blocksize - core::mem::size_of::<Ext4DirEntryTail>())

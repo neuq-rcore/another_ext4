@@ -21,7 +21,7 @@ impl Ext4 {
     ///
     /// | Super Block | Group Descriptor | Reserved GDT Blocks |
     /// | Block Bitmap | Inode Bitmap | Inode Table | Data Blocks |
-    pub fn load(block_device: Arc<dyn BlockDevice>) -> Self {
+    pub fn load(block_device: Arc<dyn BlockDevice>) -> Result<Self> {
         // Load the superblock
         // TODO: if the main superblock is corrupted, should we load the backup?
         let raw_data = block_device.read_offset(BASE_OFFSET);
@@ -35,8 +35,8 @@ impl Ext4 {
             mount_point,
         };
         // Create root directory
-        ext4.alloc_root_inode();
-        ext4
+        ext4.alloc_root_inode()?;
+        Ok(ext4)
     }
 
     /// Read an inode from block device, return an`Ext4InodeRef` that combines

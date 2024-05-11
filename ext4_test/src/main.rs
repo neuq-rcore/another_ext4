@@ -21,7 +21,7 @@ impl BlockFile {
 
 impl BlockDevice for BlockFile {
     fn read_offset(&self, offset: usize) -> Vec<u8> {
-        info!("Reading block at offset {}", offset);
+        // info!("Reading block at offset {}", offset);
         let mut file = &self.0;
         let mut buffer = vec![0u8; BLOCK_SIZE];
         let _r = file.seek(SeekFrom::Start(offset as u64));
@@ -30,7 +30,7 @@ impl BlockDevice for BlockFile {
     }
 
     fn write_offset(&self, offset: usize, data: &[u8]) {
-        info!("Writing block at offset {}", offset);
+        // info!("Writing block at offset {}", offset);
         let mut file = &self.0;
         let _r = file.seek(SeekFrom::Start(offset as u64));
         let _r = file.write_all(data);
@@ -76,7 +76,7 @@ fn open_test(ext4: &mut Ext4) {
         .expect("open failed");
     ext4.ext4_open("1/2/3/4/5", "r", true).expect("open failed");
     ext4.ext4_open("1/2/3/4/5", "a", true).expect("open failed");
-    ext4.ext4_open("4", "w+", true).expect("open failed");
+    ext4.ext4_open("2/4", "w+", true).expect("open failed");
 }
 
 fn main() {

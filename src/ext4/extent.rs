@@ -41,7 +41,11 @@ impl Ext4 {
 
     /// Given a logic block id, find the corresponding fs block id.
     /// Return 0 if not found.
-    pub(super) fn extent_get_pblock(&self, inode_ref: &Ext4InodeRef, iblock: LBlockId) -> PBlockId {
+    pub(super) fn extent_get_pblock(
+        &self,
+        inode_ref: &Ext4InodeRef,
+        iblock: LBlockId,
+    ) -> Result<PBlockId> {
         let path = self.find_extent(inode_ref, iblock);
         // Leaf is the last element of the path
         let leaf = path.last().unwrap();
@@ -60,9 +64,9 @@ impl Ext4 {
                 inode_ref.inode.extent()
             };
             let ex = ex_node.extent_at(index);
-            ex.start_pblock() + (iblock - ex.start_lblock()) as PBlockId
+            Ok(ex.start_pblock() + (iblock - ex.start_lblock()) as PBlockId)
         } else {
-            0
+            Err(Ext4Error::new(ErrCode::ENOENT))
         }
     }
 
@@ -73,7 +77,7 @@ impl Ext4 {
         inode_ref: &mut Ext4InodeRef,
         iblock: LBlockId,
         block_count: u32,
-    ) -> PBlockId {
+    ) -> Result<PBlockId> {
         let path = self.find_extent(inode_ref, iblock);
         // Leaf is the last element of the path
         let leaf = path.last().unwrap();
@@ -94,18 +98,18 @@ impl Ext4 {
             Ok(index) => {
                 // Found, return the corresponding fs block id
                 let ex = ex_node.extent_at(index);
-                ex.start_pblock() + (iblock - ex.start_lblock()) as PBlockId
+                Ok(ex.start_pblock() + (iblock - ex.start_lblock()) as PBlockId)
             }
             Err(_) => {
                 // Not found, create a new extent
                 let block_count = min(block_count, EXT_MAX_BLOCKS - iblock);
                 // Allocate physical block
-                let fblock = self.alloc_block(inode_ref, 0);
+                let fblock = self.alloc_block(inode_ref, 0)?;
                 // Create a new extent
                 let new_ext = Ext4Extent::new(iblock, fblock, block_count as u16);
                 // Insert the new extent
                 self.insert_extent(inode_ref, leaf, &new_ext);
-                fblock
+                Ok(fblock)
             }
         }
     }
@@ -140,7 +144,7 @@ impl Ext4 {
         if targ_ext.is_uninit() {
             // 1. The position has an uninitialized extent
             *targ_ext = new_ext.clone();
-            
+
             let en_count = ex_node.header().entries_count() + 1;
             ex_node.header_mut().set_entries_count(en_count);
             split = false;
@@ -153,7 +157,7 @@ impl Ext4 {
                 i += 1;
             }
             *ex_node.extent_mut_at(index) = new_ext.clone();
-            
+
             let en_count = ex_node.header().entries_count() + 1;
             ex_node.header_mut().set_entries_count(en_count);
             // Check if the extent node is full

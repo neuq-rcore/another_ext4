@@ -21,7 +21,7 @@ impl Ext4 {
         // Search from the given parent inode
         let mut parent = parent_inode.clone();
         let search_path = Self::split_path(path);
-        
+
         info!("generic open: {}", path);
         for (i, path) in search_path.iter().enumerate() {
             let res = self.dir_find_entry(&parent, path);
@@ -43,13 +43,10 @@ impl Ext4 {
                         self.alloc_inode(ftype)
                     } else {
                         self.alloc_inode(FileType::Directory)
-                    };
+                    }?;
                     // Link the new inode
-                    let r = self.ext4_link(&mut parent, &mut child, path);
-                    if r != EOK {
-                        // Fail. Free new inode
-                        return_errno_with_message!(ErrCode::ELINKFIAL, "link fail");
-                    }
+                    self.ext4_link(&mut parent, &mut child, path)
+                        .map_err(|_| Ext4Error::with_message(ErrCode::ELINKFIAL, "link fail"))?;
                     // Write back parent and child
                     self.write_back_inode_with_csum(&mut parent);
                     self.write_back_inode_with_csum(&mut child);
@@ -120,7 +117,7 @@ impl Ext4 {
         // Read first block
         if misaligned > 0 {
             let first_block_read_len = min(BLOCK_SIZE - misaligned, size_to_read);
-            let fblock = self.extent_get_pblock(&mut inode_ref, start_iblock);
+            let fblock = self.extent_get_pblock(&mut inode_ref, start_iblock)?;
             if fblock != 0 {
                 let block_offset = fblock as usize * BLOCK_SIZE + misaligned;
                 let block_data = self.block_device.read_offset(block_offset);
@@ -138,7 +135,7 @@ impl Ext4 {
         // Continue with full block reads
         while cursor < size_to_read {
             let read_length = min(BLOCK_SIZE, size_to_read - cursor);
-            let fblock = self.extent_get_pblock(&mut inode_ref, iblock);
+            let fblock = self.extent_get_pblock(&mut inode_ref, iblock)?;
             if fblock != 0 {
                 let block_data = self.block_device.read_offset(fblock as usize * BLOCK_SIZE);
                 // Copy data from block to the user buffer
@@ -155,7 +152,7 @@ impl Ext4 {
         Ok(cursor)
     }
 
-    pub fn ext4_file_write(&mut self, file: &mut Ext4File, data: &[u8]) {
+    pub fn ext4_file_write(&mut self, file: &mut Ext4File, data: &[u8]) -> Result<()> {
         let size = data.len();
         let mut inode_ref = self.get_inode_ref(file.inode);
         // Sync ext file
@@ -169,7 +166,7 @@ impl Ext4 {
         // Append enough block for writing
         let append_block_count = end_iblock + 1 - block_count as LBlockId;
         for _ in 0..append_block_count {
-            self.inode_append_block(&mut inode_ref);
+            self.inode_append_block(&mut inode_ref)?;
         }
 
         // Write data
@@ -177,9 +174,10 @@ impl Ext4 {
         let mut iblock = start_iblock;
         while cursor < size {
             let write_len = min(BLOCK_SIZE, size - cursor);
-            let fblock = self.extent_get_pblock(&mut inode_ref, iblock);
+            let fblock = self.extent_get_pblock(&mut inode_ref, iblock)?;
             if fblock != 0 {
-                self.block_device.write_offset(cursor, &data[cursor..cursor + write_len]);
+                self.block_device
+                    .write_offset(cursor, &data[cursor..cursor + write_len]);
             } else {
                 panic!("Write to unallocated block");
             }
@@ -187,6 +185,7 @@ impl Ext4 {
             file.fpos += write_len;
             iblock += 1;
         }
+        Ok(())
     }
 
     pub fn ext4_file_remove(&self, _path: &str) -> Result<usize> {
