@@ -151,12 +151,7 @@ impl Ext4Inode {
         self.i_extra_isize = extra_isize;
     }
 
-    pub fn set_inode_checksum_value(
-        &mut self,
-        super_block: &Ext4Superblock,
-        _inode_id: u32,
-        checksum: u32,
-    ) {
+    pub fn set_inode_checksum_value(&mut self, super_block: &Ext4Superblock, checksum: u32) {
         let inode_size = super_block.inode_size();
 
         self.osd2.l_i_checksum_lo = ((checksum << 16) >> 16) as u16;
@@ -171,42 +166,6 @@ impl Ext4Inode {
             blocks |= (self.osd2.l_i_blocks_high as u64) << 32;
         }
         blocks
-    }
-
-    /// Find the position of an inode in the block device.
-    ///
-    /// Each block group contains `sb.inodes_per_group` inodes.
-    /// Because inode 0 is defined not to exist, this formula can
-    /// be used to find the block group that an inode lives in:
-    /// `bg = (inode_id - 1) / sb.inodes_per_group`.
-    ///
-    /// The particular inode can be found within the block group's
-    /// inode table at `index = (inode_id - 1) % sb.inodes_per_group`.
-    /// To get the byte address within the inode table, use
-    /// `offset = index * sb.inode_size`.
-    fn inode_disk_pos(
-        super_block: &Ext4Superblock,
-        block_device: Arc<dyn BlockDevice>,
-        inode_id: u32,
-    ) -> usize {
-        let inodes_per_group = super_block.inodes_per_group();
-        let inode_size = super_block.inode_size();
-        let group = (inode_id - 1) / inodes_per_group;
-        let index = (inode_id - 1) % inodes_per_group;
-
-        let bg = Ext4BlockGroupDesc::load(block_device, super_block, group as usize).unwrap();
-        bg.inode_table_first_block() as usize * BLOCK_SIZE + (index * inode_size as u32) as usize
-    }
-
-    fn read_from_disk(
-        super_block: &Ext4Superblock,
-        block_device: Arc<dyn BlockDevice>,
-        inode_id: u32,
-    ) -> Self {
-        let pos = Ext4Inode::inode_disk_pos(super_block, block_device.clone(), inode_id);
-        let data = block_device.read_offset(pos);
-        let inode_data = &data[..core::mem::size_of::<Ext4Inode>()];
-        Ext4Inode::from_bytes(inode_data)
     }
 
     fn copy_to_byte_slice(&self, slice: &mut [u8]) {
@@ -241,7 +200,7 @@ impl Ext4Inode {
         // inode checksum
         checksum = ext4_crc32c(checksum, &raw_data, inode_size as u32);
 
-        self.set_inode_checksum_value(super_block, inode_id, checksum);
+        self.set_inode_checksum_value(super_block, checksum);
 
         if inode_size == 128 {
             checksum &= 0xFFFF;
@@ -258,31 +217,6 @@ impl Ext4Inode {
         if inode_size > 128 {
             self.i_checksum_hi = (checksum >> 16) as u16;
         }
-    }
-
-    fn sync_to_disk_without_csum(
-        &self,
-        block_device: Arc<dyn BlockDevice>,
-        super_block: &Ext4Superblock,
-        inode_id: u32,
-    ) -> Result<()> {
-        let disk_pos = Self::inode_disk_pos(super_block, block_device.clone(), inode_id);
-        let data = unsafe {
-            core::slice::from_raw_parts(self as *const _ as *const u8, size_of::<Ext4Inode>())
-        };
-        block_device.write_offset(disk_pos, data);
-
-        Ok(())
-    }
-
-    fn sync_to_disk_with_csum(
-        &mut self,
-        block_device: Arc<dyn BlockDevice>,
-        super_block: &Ext4Superblock,
-        inode_id: u32,
-    ) -> Result<()> {
-        self.set_checksum(super_block, inode_id);
-        self.sync_to_disk_without_csum(block_device, super_block, inode_id)
     }
 
     /* Extent methods */
@@ -318,24 +252,52 @@ impl Ext4Inode {
 /// A combination of an `Ext4Inode` and its id
 #[derive(Default, Clone)]
 pub struct Ext4InodeRef {
-    pub inode_id: u32,
+    pub inode_id: InodeId,
     pub inode: Ext4Inode,
 }
 
 impl Ext4InodeRef {
-    pub fn new(inode_id: u32, inode: Ext4Inode) -> Self {
+    pub fn new(inode_id: InodeId, inode: Ext4Inode) -> Self {
         Self { inode_id, inode }
     }
 
     pub fn read_from_disk(
         block_device: Arc<dyn BlockDevice>,
         super_block: &Ext4Superblock,
-        inode_id: u32,
+        inode_id: InodeId,
     ) -> Self {
-        Self::new(
+        let pos = Self::inode_disk_pos(super_block, block_device.clone(), inode_id);
+        let data = block_device.read_offset(pos);
+        let inode_data = &data[..core::mem::size_of::<Ext4Inode>()];
+        Self {
             inode_id,
-            Ext4Inode::read_from_disk(super_block, block_device, inode_id),
-        )
+            inode: Ext4Inode::from_bytes(inode_data),
+        }
+    }
+
+    /// Find the position of an inode in the block device.
+    ///
+    /// Each block group contains `sb.inodes_per_group` inodes.
+    /// Because inode 0 is defined not to exist, this formula can
+    /// be used to find the block group that an inode lives in:
+    /// `bg = (inode_id - 1) / sb.inodes_per_group`.
+    ///
+    /// The particular inode can be found within the block group's
+    /// inode table at `index = (inode_id - 1) % sb.inodes_per_group`.
+    /// To get the byte address within the inode table, use
+    /// `offset = index * sb.inode_size`.
+    fn inode_disk_pos(
+        super_block: &Ext4Superblock,
+        block_device: Arc<dyn BlockDevice>,
+        inode_id: InodeId,
+    ) -> usize {
+        let inodes_per_group = super_block.inodes_per_group();
+        let inode_size = super_block.inode_size();
+        let group = (inode_id - 1) / inodes_per_group;
+        let index = (inode_id - 1) % inodes_per_group;
+
+        let bg = Ext4BlockGroupDesc::load(block_device, super_block, group as usize).unwrap();
+        bg.inode_table_first_block() as usize * BLOCK_SIZE + (index * inode_size as u32) as usize
     }
 
     pub fn sync_to_disk_without_csum(
@@ -343,8 +305,12 @@ impl Ext4InodeRef {
         block_device: Arc<dyn BlockDevice>,
         super_block: &Ext4Superblock,
     ) -> Result<()> {
-        self.inode
-            .sync_to_disk_without_csum(block_device, super_block, self.inode_id)
+        let disk_pos = Self::inode_disk_pos(super_block, block_device.clone(), self.inode_id);
+        let data = unsafe {
+            core::slice::from_raw_parts(self as *const _ as *const u8, size_of::<Ext4Inode>())
+        };
+        block_device.write_offset(disk_pos, data);
+        Ok(())
     }
 
     pub fn sync_to_disk_with_csum(
@@ -352,7 +318,7 @@ impl Ext4InodeRef {
         block_device: Arc<dyn BlockDevice>,
         super_block: &Ext4Superblock,
     ) -> Result<()> {
-        self.inode
-            .sync_to_disk_with_csum(block_device, super_block, self.inode_id)
+        self.inode.set_checksum(super_block, self.inode_id);
+        self.sync_to_disk_without_csum(block_device, super_block)
     }
 }

@@ -41,7 +41,7 @@ impl Ext4 {
 
     /// Read an inode from block device, return an`Ext4InodeRef` that combines
     /// the inode and its id.
-    fn get_inode_ref(&self, inode_id: u32) -> Ext4InodeRef {
+    fn get_inode_ref(&self, inode_id: InodeId) -> Ext4InodeRef {
         Ext4InodeRef::read_from_disk(self.block_device.clone(), &self.super_block, inode_id)
     }
 

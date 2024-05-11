@@ -38,7 +38,7 @@ impl Default for Ext4DirEnInner {
 #[repr(C)]
 #[derive(Debug)]
 pub struct Ext4DirEntry {
-    inode: u32,            // 该目录项指向的inode的编号
+    inode: InodeId,        // 该目录项指向的inode的编号
     rec_len: u16,          // 到下一个目录项的距离
     name_len: u8,          // 低8位的文件名长度
     inner: Ext4DirEnInner, // 联合体成员
@@ -59,7 +59,7 @@ impl Default for Ext4DirEntry {
 
 impl Ext4DirEntry {
     /// Create a new directory entry
-    pub fn new(inode: u32, rec_len: u16, name: &str, dirent_type: FileType) -> Self {
+    pub fn new(inode: InodeId, rec_len: u16, name: &str, dirent_type: FileType) -> Self {
         let mut name_bytes = [0u8; 255];
         let name_len = name.as_bytes().len();
         name_bytes[..name_len].copy_from_slice(name.as_bytes());
@@ -103,11 +103,11 @@ impl Ext4DirEntry {
         self.rec_len = len;
     }
 
-    pub fn inode(&self) -> u32 {
+    pub fn inode(&self) -> InodeId {
         self.inode
     }
 
-    pub fn set_inode(&mut self, inode: u32) {
+    pub fn set_inode(&mut self, inode: InodeId) {
         self.inode = inode;
     }
 

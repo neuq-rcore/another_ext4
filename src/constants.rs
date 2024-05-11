@@ -36,7 +36,7 @@ pub const NAME_MAX: usize = 255;
 pub const SYMLINKS_MAX: usize = 40;
 
 /// The inode number of root inode
-pub const EXT4_ROOT_INO: u32 = 2;
+pub const EXT4_ROOT_INO: InodeId = 2;
 
 pub const BASE_OFFSET: usize = 1024;
 pub const BLOCK_SIZE: usize = 4096;

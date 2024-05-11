@@ -117,7 +117,7 @@ impl Ext4 {
     }
 
     /// Allocate a new inode in the filesystem, returning its number.
-    fn do_alloc_inode(&mut self, is_dir: bool) -> Result<u32> {
+    fn do_alloc_inode(&mut self, is_dir: bool) -> Result<InodeId> {
         let mut bgid = 0;
         let bg_count = self.super_block.block_groups_count();
 
@@ -181,9 +181,9 @@ impl Ext4 {
 
             // Compute the absolute i-node number
             let inodes_per_group = self.super_block.inodes_per_group();
-            let inode_num = bgid * inodes_per_group + (idx_in_bg + 1);
+            let inode_id = bgid * inodes_per_group + (idx_in_bg + 1);
 
-            return Ok(inode_num);
+            return Ok(inode_id);
         }
         log::info!("no free inode");
         Err(Ext4Error::new(ErrCode::ENOSPC))

@@ -6,7 +6,7 @@ pub struct Ext4File {
     /// 挂载点句柄
     pub mp: *mut Ext4MountPoint,
     /// 文件 inode id
-    pub inode: u32,
+    pub inode: InodeId,
     /// 打开标志
     pub flags: u32,
     /// 文件大小

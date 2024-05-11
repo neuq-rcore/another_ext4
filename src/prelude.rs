@@ -30,3 +30,4 @@ pub(crate) type Result<T> = core::result::Result<T, Ext4Error>;
 
 pub(crate) type LBlockId = u32;
 pub(crate) type PBlockId = u64;
+pub(crate) type InodeId = u32;
