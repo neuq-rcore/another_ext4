@@ -10,15 +10,14 @@ impl Ext4 {
         inode_ref: &mut InodeRef,
         goal: PBlockId,
     ) -> Result<PBlockId> {
-        let bgid = goal / self.super_block.blocks_per_group() as u64;
+        let bgid = (goal / self.super_block.blocks_per_group() as u64) as BlockGroupId;
         let idx_in_bg = goal % self.super_block.blocks_per_group() as u64;
 
         // Load block group descriptor
-        let mut bg =
-            BlockGroupDesc::load(self.block_device.clone(), &self.super_block, bgid as usize);
+        let mut bg = self.read_block_group(bgid);
 
         // Load block bitmap
-        let bitmap_block_id = bg.get_block_bitmap_block(&self.super_block);
+        let bitmap_block_id = bg.desc.block_bitmap_block(&self.super_block);
         let mut bitmap_block = self.block_device.read_block(bitmap_block_id);
         let mut bitmap = Bitmap::new(&mut bitmap_block.data);
 
@@ -28,7 +27,7 @@ impl Ext4 {
             .ok_or(Ext4Error::new(ErrCode::ENOSPC))? as PBlockId;
 
         // Set block group checksum
-        bg.set_block_bitmap_csum(&self.super_block, &bitmap);
+        bg.desc.set_block_bitmap_csum(&self.super_block, &bitmap);
         self.block_device.write_block(&bitmap_block);
 
         // Update superblock free blocks count
@@ -39,13 +38,13 @@ impl Ext4 {
         // Update inode blocks (different block size!) count
         let inode_blocks = inode_ref.inode.blocks_count();
         inode_ref.inode.set_blocks_count(inode_blocks as u32 + 8); // TODO: why + 8?
-        self.write_back_inode_with_csum(inode_ref);
+        self.write_inode_with_csum(inode_ref);
 
         // Update block group free blocks count
-        let fb_cnt = bg.get_free_blocks_count();
-        bg.set_free_blocks_count(fb_cnt - 1);
+        let fb_cnt = bg.desc.get_free_blocks_count();
+        bg.desc.set_free_blocks_count(fb_cnt - 1);
 
-        bg.sync_to_disk_with_csum(self.block_device.clone(), bgid as usize, &self.super_block);
+        self.write_block_group_with_csum(&mut bg);
 
         info!("Alloc block {} ok", fblock);
         Ok(fblock)
@@ -63,7 +62,7 @@ impl Ext4 {
         let fblock = self.extent_get_pblock_create(inode_ref, iblock, 1)?;
         // Update the inode
         inode_ref.inode.set_size(inode_size + BLOCK_SIZE as u64);
-        self.write_back_inode_with_csum(inode_ref);
+        self.write_inode_with_csum(inode_ref);
         Ok((iblock, fblock))
     }
 
@@ -83,7 +82,7 @@ impl Ext4 {
         self.dir_add_entry(&mut root, &root_self, "..")?;
         root.inode.links_count += 2;
 
-        self.write_back_inode_with_csum(&mut root);
+        self.write_inode_with_csum(&mut root);
         Ok(root)
     }
 
@@ -110,9 +109,9 @@ impl Ext4 {
         let mut inode_ref = InodeRef::new(id, inode);
 
         // Sync the inode to disk
-        self.write_back_inode_with_csum(&mut inode_ref);
+        self.write_inode_with_csum(&mut inode_ref);
 
-        info!("Alloc inode {} ok", inode_ref.inode_id);
+        info!("Alloc inode {} ok", inode_ref.id);
         Ok(inode_ref)
     }
 
@@ -123,16 +122,15 @@ impl Ext4 {
 
         while bgid <= bg_count {
             // Load block group descriptor
-            let mut bg =
-                BlockGroupDesc::load(self.block_device.clone(), &self.super_block, bgid as usize);
+            let mut bg = self.read_block_group(bgid);
             // If there are no free inodes in this block group, try the next one
-            if bg.free_inodes_count() == 0 {
+            if bg.desc.free_inodes_count() == 0 {
                 bgid += 1;
                 continue;
             }
 
             // Load inode bitmap
-            let bitmap_block_id = bg.get_inode_bitmap_block(&self.super_block);
+            let bitmap_block_id = bg.desc.inode_bitmap_block(&self.super_block);
             let mut bitmap_block = self.block_device.read_block(bitmap_block_id);
             let inode_count = self.super_block.inode_count_in_group(bgid) as usize;
             let mut bitmap = Bitmap::new(&mut bitmap_block.data[..inode_count / 8]);
@@ -141,28 +139,28 @@ impl Ext4 {
             let idx_in_bg = bitmap.find_and_set_first_clear_bit(0, inode_count).unwrap() as u32;
 
             // Update bitmap in disk
-            bg.set_inode_bitmap_csum(&self.super_block, &bitmap);
+            bg.desc.set_inode_bitmap_csum(&self.super_block, &bitmap);
             self.block_device.write_block(&bitmap_block);
 
             // Modify filesystem counters
-            let free_inodes = bg.free_inodes_count() - 1;
-            bg.set_free_inodes_count(&self.super_block, free_inodes);
+            let free_inodes = bg.desc.free_inodes_count() - 1;
+            bg.desc.set_free_inodes_count(&self.super_block, free_inodes);
 
             // Increment used directories counter
             if is_dir {
-                let used_dirs = bg.get_used_dirs_count(&self.super_block) - 1;
-                bg.set_used_dirs_count(&self.super_block, used_dirs);
+                let used_dirs = bg.desc.used_dirs_count(&self.super_block) - 1;
+                bg.desc.set_used_dirs_count(&self.super_block, used_dirs);
             }
 
             // Decrease unused inodes count
-            let mut unused = bg.get_itable_unused(&self.super_block);
+            let mut unused = bg.desc.itable_unused(&self.super_block);
             let free = inode_count as u32 - unused;
             if idx_in_bg >= free {
                 unused = inode_count as u32 - (idx_in_bg + 1);
-                bg.set_itable_unused(&self.super_block, unused);
+                bg.desc.set_itable_unused(&self.super_block, unused);
             }
 
-            bg.sync_to_disk_with_csum(self.block_device.clone(), bgid as usize, &self.super_block);
+            self.write_block_group_with_csum(&mut bg);
 
             // Update superblock
             self.super_block.decrease_free_inodes_count();

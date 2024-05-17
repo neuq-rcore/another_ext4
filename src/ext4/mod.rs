@@ -39,27 +39,41 @@ impl Ext4 {
         Ok(ext4)
     }
 
-    /// Read an inode from block device, return an `InodeRef` that combines
-    /// the inode and its id.
-    fn get_inode_ref(&self, inode_id: InodeId) -> InodeRef {
-        InodeRef::read_from_disk(self.block_device.clone(), &self.super_block, inode_id)
+    /// Read an inode from block device, return an `InodeRef` that
+    /// combines the inode and its id.
+    fn read_inode(&self, inode_id: InodeId) -> InodeRef {
+        InodeRef::load_from_disk(self.block_device.clone(), &self.super_block, inode_id)
     }
 
     /// Read the root inode from block device
-    fn get_root_inode_ref(&self) -> InodeRef {
-        self.get_inode_ref(EXT4_ROOT_INO)
+    fn read_root_inode(&self) -> InodeRef {
+        self.read_inode(EXT4_ROOT_INO)
     }
 
-    /// Write back an inode to block device with checksum
-    fn write_back_inode_with_csum(&self, inode_ref: &mut InodeRef) {
-        inode_ref
-            .sync_to_disk_with_csum(self.block_device.clone(), &self.super_block)
-            
+    /// Write an inode to block device with checksum
+    fn write_inode_with_csum(&self, inode_ref: &mut InodeRef) {
+        inode_ref.sync_to_disk_with_csum(self.block_device.clone(), &self.super_block)
     }
 
-    /// Write back an inode to block device without checksum
-    fn write_back_inode_without_csum(&self, inode_ref: &mut InodeRef) {
-        inode_ref
-            .sync_to_disk_without_csum(self.block_device.clone(), &self.super_block)
+    /// Write an inode to block device without checksum
+    fn write_inode_without_csum(&self, inode_ref: &mut InodeRef) {
+        inode_ref.sync_to_disk_without_csum(self.block_device.clone(), &self.super_block)
+    }
+
+    /// Read a block group descriptor from block device, return an `BlockGroupRef`
+    /// that combines the inode and its id.
+    fn read_block_group(&self, block_group_id: BlockGroupId) -> BlockGroupRef {
+        BlockGroupRef::load_from_disk(self.block_device.clone(), &self.super_block, block_group_id)
+    }
+
+    /// Write a block group descriptor to block device with checksum
+    fn write_block_group_with_csum(&self, bg_ref: &mut BlockGroupRef) {
+        bg_ref.sync_to_disk_with_csum(self.block_device.clone(), &self.super_block)
+    }
+
+    /// Write a block group descriptor to block device without checksum
+    #[allow(unused)]
+    fn write_block_group_without_csum(&self, bg_ref: &mut BlockGroupRef) {
+        bg_ref.sync_to_disk_without_csum(self.block_device.clone(), &self.super_block)
     }
 }

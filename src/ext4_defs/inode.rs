@@ -8,14 +8,14 @@
 //! `(inode_number - 1) % sb.inodes_per_group`. There is no inode 0.
 
 use super::crc::*;
+use super::AsBytes;
 use super::BlockDevice;
-use super::BlockGroupDesc;
+use super::BlockGroupRef;
 use super::ExtentHeader;
 use super::Superblock;
 use super::{ExtentNode, ExtentNodeMut};
 use crate::constants::*;
 use crate::prelude::*;
-use crate::AsBytes;
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -149,6 +149,14 @@ impl Inode {
         self.dtime = del_time;
     }
 
+    pub fn blocks_count(&self) -> u64 {
+        let mut blocks = self.blocks as u64;
+        if self.osd2.l_i_blocks_high != 0 {
+            blocks |= (self.osd2.l_i_blocks_high as u64) << 32;
+        }
+        blocks
+    }
+
     pub fn set_blocks_count(&mut self, blocks_count: u32) {
         self.blocks = blocks_count;
     }
@@ -161,71 +169,11 @@ impl Inode {
         self.i_extra_isize = extra_isize;
     }
 
-    pub fn set_inode_checksum_value(&mut self, super_block: &Superblock, checksum: u32) {
-        let inode_size = super_block.inode_size();
-
-        self.osd2.l_i_checksum_lo = ((checksum << 16) >> 16) as u16;
-        if inode_size > 128 {
-            self.i_checksum_hi = (checksum >> 16) as u16;
-        }
-    }
-
-    pub fn blocks_count(&self) -> u64 {
-        let mut blocks = self.blocks as u64;
-        if self.osd2.l_i_blocks_high != 0 {
-            blocks |= (self.osd2.l_i_blocks_high as u64) << 32;
-        }
-        blocks
-    }
-
     fn copy_to_byte_slice(&self, slice: &mut [u8]) {
         unsafe {
             let inode_ptr = self as *const Inode as *const u8;
             let array_ptr = slice.as_ptr() as *mut u8;
             core::ptr::copy_nonoverlapping(inode_ptr, array_ptr, 0x9c);
-        }
-    }
-
-    fn calc_checksum(&mut self, inode_id: u32, super_block: &Superblock) -> u32 {
-        let inode_size = super_block.inode_size();
-
-        let ino_index = inode_id as u32;
-        let ino_gen = self.generation;
-
-        // Preparation: temporarily set bg checksum to 0
-        self.osd2.l_i_checksum_lo = 0;
-        self.i_checksum_hi = 0;
-
-        let mut checksum = ext4_crc32c(
-            EXT4_CRC32_INIT,
-            &super_block.uuid(),
-            super_block.uuid().len() as u32,
-        );
-        checksum = ext4_crc32c(checksum, &ino_index.to_le_bytes(), 4);
-        checksum = ext4_crc32c(checksum, &ino_gen.to_le_bytes(), 4);
-
-        let mut raw_data = [0u8; 0x100];
-        self.copy_to_byte_slice(&mut raw_data);
-
-        // inode checksum
-        checksum = ext4_crc32c(checksum, &raw_data, inode_size as u32);
-
-        self.set_inode_checksum_value(super_block, checksum);
-
-        if inode_size == 128 {
-            checksum &= 0xFFFF;
-        }
-
-        checksum
-    }
-
-    fn set_checksum(&mut self, super_block: &Superblock, inode_id: u32) {
-        let inode_size = super_block.inode_size();
-        let checksum = self.calc_checksum(inode_id, super_block);
-
-        self.osd2.l_i_checksum_lo = ((checksum << 16) >> 16) as u16;
-        if inode_size > 128 {
-            self.i_checksum_hi = (checksum >> 16) as u16;
         }
     }
 
@@ -262,24 +210,24 @@ impl Inode {
 /// A combination of an `Inode` and its id
 #[derive(Clone)]
 pub struct InodeRef {
-    pub inode_id: InodeId,
+    pub id: InodeId,
     pub inode: Inode,
 }
 
 impl InodeRef {
-    pub fn new(inode_id: InodeId, inode: Inode) -> Self {
-        Self { inode_id, inode }
+    pub fn new(id: InodeId, inode: Inode) -> Self {
+        Self { id, inode }
     }
 
-    pub fn read_from_disk(
+    pub fn load_from_disk(
         block_device: Arc<dyn BlockDevice>,
         super_block: &Superblock,
-        inode_id: InodeId,
+        id: InodeId,
     ) -> Self {
-        let (block_id, offset) = Self::inode_disk_pos(super_block, block_device.clone(), inode_id);
+        let (block_id, offset) = Self::disk_pos(super_block, block_device.clone(), id);
         let block = block_device.read_block(block_id);
         Self {
-            inode_id,
+            id,
             inode: Inode::from_bytes(block.read_offset(offset, size_of::<Inode>())),
         }
     }
@@ -296,18 +244,19 @@ impl InodeRef {
     /// inode table at `index = (inode_id - 1) % sb.inodes_per_group`.
     /// To get the byte address within the inode table, use
     /// `offset = index * sb.inode_size`.
-    fn inode_disk_pos(
+    fn disk_pos(
         super_block: &Superblock,
         block_device: Arc<dyn BlockDevice>,
         inode_id: InodeId,
     ) -> (PBlockId, usize) {
         let inodes_per_group = super_block.inodes_per_group();
+        let group = ((inode_id - 1) / inodes_per_group) as BlockGroupId;
         let inode_size = super_block.inode_size() as usize;
-        let group = ((inode_id - 1) / inodes_per_group) as usize;
         let index = ((inode_id - 1) % inodes_per_group) as usize;
 
-        let bg = BlockGroupDesc::load(block_device, super_block, group);
-        let block_id = bg.inode_table_first_block() + (index * inode_size / BLOCK_SIZE) as PBlockId;
+        let bg = BlockGroupRef::load_from_disk(block_device, super_block, group);
+        let block_id =
+            bg.desc.inode_table_first_block() + (index * inode_size / BLOCK_SIZE) as PBlockId;
         let offset = (index * inode_size) % BLOCK_SIZE;
         (block_id, offset)
     }
@@ -317,8 +266,7 @@ impl InodeRef {
         block_device: Arc<dyn BlockDevice>,
         super_block: &Superblock,
     ) {
-        let (block_id, offset) =
-            Self::inode_disk_pos(super_block, block_device.clone(), self.inode_id);
+        let (block_id, offset) = Self::disk_pos(super_block, block_device.clone(), self.id);
         let mut block = block_device.read_block(block_id);
         block.write_offset_as(offset, &self.inode);
         block.sync_to_disk(block_device);
@@ -329,7 +277,41 @@ impl InodeRef {
         block_device: Arc<dyn BlockDevice>,
         super_block: &Superblock,
     ) {
-        self.inode.set_checksum(super_block, self.inode_id);
+        self.set_checksum(super_block);
         self.sync_to_disk_without_csum(block_device, super_block);
+    }
+
+    pub fn set_checksum(&mut self, super_block: &Superblock) {
+        let inode_size = super_block.inode_size();
+
+        let ino_index = self.id as u32;
+        let ino_gen = self.inode.generation;
+
+        // Preparation: temporarily set bg checksum to 0
+        self.inode.osd2.l_i_checksum_lo = 0;
+        self.inode.i_checksum_hi = 0;
+
+        let mut checksum = ext4_crc32c(
+            EXT4_CRC32_INIT,
+            &super_block.uuid(),
+            super_block.uuid().len() as u32,
+        );
+        checksum = ext4_crc32c(checksum, &ino_index.to_le_bytes(), 4);
+        checksum = ext4_crc32c(checksum, &ino_gen.to_le_bytes(), 4);
+
+        let mut raw_data = [0u8; 0x100];
+        self.inode.copy_to_byte_slice(&mut raw_data);
+
+        // inode checksum
+        checksum = ext4_crc32c(checksum, &raw_data, inode_size as u32);
+
+        if inode_size == 128 {
+            checksum &= 0xFFFF;
+        }
+
+        self.inode.osd2.l_i_checksum_lo = ((checksum << 16) >> 16) as u16;
+        if super_block.inode_size() > 128 {
+            self.inode.i_checksum_hi = (checksum >> 16) as u16;
+        }
     }
 }

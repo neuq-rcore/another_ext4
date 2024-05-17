@@ -18,7 +18,7 @@ where
     }
 }
 
-/// Block descriptor
+/// Common data block descriptor
 pub struct Block {
     /// Physical block id
     pub block_id: PBlockId,

@@ -163,7 +163,7 @@ impl Ext4 {
         if block_data.block_id != 0 {
             block_data.sync_to_disk(self.block_device.clone());
         } else {
-            self.write_back_inode_without_csum(inode_ref);
+            self.write_inode_without_csum(inode_ref);
         }
 
         split

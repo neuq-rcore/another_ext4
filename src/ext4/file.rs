@@ -27,7 +27,7 @@ impl Ext4 {
             let res = self.dir_find_entry(&parent, path);
             match res {
                 Ok(entry) => {
-                    parent = self.get_inode_ref(entry.inode());
+                    parent = self.read_inode(entry.inode());
                 }
                 Err(e) => {
                     if e.code() != ErrCode::ENOENT {
@@ -47,14 +47,14 @@ impl Ext4 {
                     self.link(&mut parent, &mut child, path)
                         .map_err(|_| Ext4Error::with_message(ErrCode::ELINKFIAL, "link fail"))?;
                     // Write back parent and child
-                    self.write_back_inode_with_csum(&mut parent);
-                    self.write_back_inode_with_csum(&mut child);
+                    self.write_inode_with_csum(&mut parent);
+                    self.write_inode_with_csum(&mut child);
                 }
             }
         }
         // Reach the target
         let mut file = File::default();
-        file.inode = parent.inode_id;
+        file.inode = parent.id;
         Ok(file)
     }
 
@@ -72,7 +72,7 @@ impl Ext4 {
             self.trans_start();
         }
         // open file
-        let res = self.generic_open(path, iflags, file_type, &self.get_root_inode_ref());
+        let res = self.generic_open(path, iflags, file_type, &self.read_root_inode());
         res.map(|mut file| {
             // set mount point
             let mut ptr = Box::new(self.mount_point.clone());
@@ -87,7 +87,7 @@ impl Ext4 {
             return Ok(0);
         }
         // Get the inode of the file
-        let mut inode_ref = self.get_inode_ref(file.inode);
+        let mut inode_ref = self.read_inode(file.inode);
         // sync file size
         file.fsize = inode_ref.inode.size();
 
@@ -135,7 +135,7 @@ impl Ext4 {
 
     pub fn write(&mut self, file: &mut File, data: &[u8]) -> Result<()> {
         let size = data.len();
-        let mut inode_ref = self.get_inode_ref(file.inode);
+        let mut inode_ref = self.read_inode(file.inode);
         // Sync ext file
         file.fsize = inode_ref.inode.size();
 

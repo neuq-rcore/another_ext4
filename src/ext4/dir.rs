@@ -6,7 +6,7 @@ use crate::prelude::*;
 impl Ext4 {
     /// Find a directory entry that matches a given name under a parent directory
     pub(super) fn dir_find_entry(&self, parent: &InodeRef, name: &str) -> Result<DirEntry> {
-        info!("Dir find entry: {} under parent {}", name, parent.inode_id);
+        info!("Dir find entry: {} under parent {}", name, parent.id);
         let inode_size: u32 = parent.inode.size;
         let total_blocks: u32 = inode_size / BLOCK_SIZE as u32;
         let mut iblock: LBlockId = 0;
@@ -54,7 +54,7 @@ impl Ext4 {
     ) -> Result<()> {
         info!(
             "Dir add entry: parent {}, child {}, path {}",
-            parent.inode_id, child.inode_id, path
+            parent.id, child.id, path
         );
         let inode_size = parent.inode.size();
         let total_blocks = inode_size as u32 / BLOCK_SIZE as u32;
@@ -92,7 +92,7 @@ impl Ext4 {
         // Set the entry
         let rec_len = BLOCK_SIZE - size_of::<DirEntryTail>();
         let new_entry = DirEntry::new(
-            child.inode_id,
+            child.id,
             rec_len as u16,
             name,
             inode_mode2file_type(child.inode.mode()),
@@ -148,7 +148,7 @@ impl Ext4 {
             de.copy_to_byte_slice(&mut dst_blk.data, offset);
             // Insert the new entry
             let new_entry = DirEntry::new(
-                child.inode_id,
+                child.id,
                 free_size as u16,
                 name,
                 inode_mode2file_type(child.inode.mode()),
@@ -178,7 +178,7 @@ impl Ext4 {
             path,
             iflags,
             FileType::Directory,
-            &self.get_root_inode_ref(),
+            &self.read_root_inode(),
         )
         .map(|_| {
             info!("ext4_dir_mk: {} ok", path);
