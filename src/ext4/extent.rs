@@ -9,6 +9,7 @@ impl Ext4 {
     fn find_extent(&self, inode_ref: &Ext4InodeRef, iblock: LBlockId) -> Vec<ExtentSearchPath> {
         let mut path: Vec<ExtentSearchPath> = Vec::new();
         let mut ex_node = inode_ref.inode.extent();
+        ex_node.print();
         let mut pblock = 0;
         let mut block_data: Vec<u8>;
 

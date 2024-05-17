@@ -28,7 +28,7 @@ pub struct Linux2 {
 }
 
 #[repr(C)]
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Ext4Inode {
     pub mode: u16,
     pub uid: u16,
@@ -42,7 +42,7 @@ pub struct Ext4Inode {
     pub blocks: u32,
     pub flags: u32,
     pub osd1: u32,
-    pub block: [u32; 15], // Block bitmap or extent tree
+    pub block: [u8; 60], // Block bitmap or extent tree
     pub generation: u32,
     pub file_acl: u32,
     pub size_hi: u32,
@@ -57,6 +57,13 @@ pub struct Ext4Inode {
     pub i_crtime: u32,       // 文件创建时间
     pub i_crtime_extra: u32, // 额外的文件创建时间（nsec << 2 | epoch）
     pub i_version_hi: u32,   // 64位版本的高32位
+}
+
+/// Because `[u8; 60]` cannot derive `Default`, we implement it manually.
+impl Default for Ext4Inode {
+    fn default() -> Self {
+        unsafe { mem::zeroed() }
+    }
 }
 
 impl Ext4Inode {
@@ -241,16 +248,16 @@ impl Ext4Inode {
     pub fn extent_init(&mut self) {
         self.set_flags(EXT4_INODE_FLAG_EXTENTS);
         let header = Ext4ExtentHeader::new(0, 4, 0, 0);
-        let header_ptr = &header as *const Ext4ExtentHeader as *const u32;
-        let array_ptr = &mut self.block as *mut [u32; 15] as *mut u32;
+        let header_ptr = &header as *const Ext4ExtentHeader as *const u8;
+        let array_ptr = &mut self.block as *mut u8;
         unsafe {
-            core::ptr::copy_nonoverlapping(header_ptr, array_ptr, 3);
+            core::ptr::copy_nonoverlapping(header_ptr, array_ptr, size_of::<Ext4ExtentHeader>());
         }
     }
 }
 
 /// A combination of an `Ext4Inode` and its id
-#[derive(Default, Clone)]
+#[derive(Clone)]
 pub struct Ext4InodeRef {
     pub inode_id: InodeId,
     pub inode: Ext4Inode,
@@ -307,7 +314,7 @@ impl Ext4InodeRef {
     ) -> Result<()> {
         let disk_pos = Self::inode_disk_pos(super_block, block_device.clone(), self.inode_id);
         let data = unsafe {
-            core::slice::from_raw_parts(self as *const _ as *const u8, size_of::<Ext4Inode>())
+            core::slice::from_raw_parts(&self.inode as *const _ as *const u8, size_of::<Ext4Inode>())
         };
         block_device.write_offset(disk_pos, data);
         Ok(())

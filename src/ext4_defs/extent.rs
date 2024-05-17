@@ -231,7 +231,7 @@ impl Ext4Extent {
 /// Interpret an immutable byte slice as an extent node. Provide methods to
 /// access the extent header and the following extents or extent indices.
 ///
-/// The underlying `raw_data` could be of `[u8;15]` (root node) or a
+/// The underlying `raw_data` could be of `[u32;15]` (root node) or a
 /// data block `[u8;BLOCK_SIZE]` (other node).
 pub struct ExtentNode<'a> {
     raw_data: &'a [u8],
@@ -305,7 +305,7 @@ impl<'a> ExtentNode<'a> {
     }
 
     pub fn print(&self) {
-        debug!("Extent header count {}", self.header().entries_count());
+        debug!("Extent header {:?}", self.header());
         let mut i = 0;
         while i < self.header().entries_count() as usize {
             let ext = self.extent_at(i);
@@ -378,7 +378,7 @@ impl<'a> ExtentNodeMut<'a> {
     }
 
     pub fn print(&self) {
-        debug!("Extent header count {}", self.header().entries_count());
+        debug!("Extent header {:?}", self.header());
         let mut i = 0;
         while i < self.header().entries_count() as usize {
             let ext = self.extent_at(i);

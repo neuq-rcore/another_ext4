@@ -1,5 +1,4 @@
 use ext4_rs::{BlockDevice, Ext4, BLOCK_SIZE};
-use log::info;
 use simple_logger::SimpleLogger;
 use std::fs::{File, OpenOptions};
 use std::io::{Read, Seek, SeekFrom, Write};
@@ -79,6 +78,16 @@ fn open_test(ext4: &mut Ext4) {
     ext4.ext4_open("2/4", "w+", true).expect("open failed");
 }
 
+fn read_write_test(ext4: &mut Ext4) {
+    let buffer = "hello world".as_bytes();
+    let mut wfile = ext4.ext4_open("1/2/3/4/5", "w+", true).expect("open failed");
+    ext4.ext4_file_write(&mut wfile, buffer).expect("write failed");
+    let mut rfile = ext4.ext4_open("1/2/3/4/5", "r", true).expect("open failed");
+    let mut buffer2 = vec![0u8; buffer.len()];
+    ext4.ext4_file_read(&mut rfile, &mut buffer2, buffer.len()).expect("read failed");
+    assert_eq!(buffer, buffer2);
+}
+
 fn main() {
     logger_init();
     make_ext4();
@@ -89,4 +98,6 @@ fn main() {
     println!("mkdir test done");
     open_test(&mut ext4);
     println!("open test done");
+    read_write_test(&mut ext4);
+    println!("read write test done");
 }

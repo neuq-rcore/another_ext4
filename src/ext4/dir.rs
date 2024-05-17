@@ -13,6 +13,7 @@ impl Ext4 {
 
         while iblock < total_blocks {
             // Get the fs block id
+            debug!("Parent {:?}", parent.inode);
             let fblock = self.extent_get_pblock(parent, iblock)?;
             // Load block from disk
             let block_data = self.block_device.read_offset(fblock as usize * BLOCK_SIZE);

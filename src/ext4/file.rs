@@ -173,13 +173,11 @@ impl Ext4 {
         let mut iblock = start_iblock;
         while cursor < size {
             let write_len = min(BLOCK_SIZE, size - cursor);
-            let fblock = self.extent_get_pblock(&mut inode_ref, iblock)?;
-            if fblock != 0 {
-                self.block_device
-                    .write_offset(cursor, &data[cursor..cursor + write_len]);
-            } else {
-                panic!("Write to unallocated block");
-            }
+            let fblock = self.extent_get_pblock(&mut inode_ref, iblock)? as usize;
+            self.block_device.write_offset(
+                fblock * BLOCK_SIZE + file.fpos % BLOCK_SIZE,
+                &data[cursor..cursor + write_len],
+            );
             cursor += write_len;
             file.fpos += write_len;
             iblock += 1;
