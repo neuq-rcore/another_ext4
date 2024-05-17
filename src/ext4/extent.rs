@@ -6,7 +6,7 @@ use core::cmp::min;
 
 impl Ext4 {
     /// Find the given logic block id in the extent tree, return the search path
-    fn find_extent(&self, inode_ref: &Ext4InodeRef, iblock: LBlockId) -> Vec<ExtentSearchPath> {
+    fn find_extent(&self, inode_ref: &InodeRef, iblock: LBlockId) -> Vec<ExtentSearchPath> {
         let mut path: Vec<ExtentSearchPath> = Vec::new();
         let mut ex_node = inode_ref.inode.extent();
         ex_node.print();
@@ -44,7 +44,7 @@ impl Ext4 {
     /// Return 0 if not found.
     pub(super) fn extent_get_pblock(
         &self,
-        inode_ref: &Ext4InodeRef,
+        inode_ref: &InodeRef,
         iblock: LBlockId,
     ) -> Result<PBlockId> {
         let path = self.find_extent(inode_ref, iblock);
@@ -75,7 +75,7 @@ impl Ext4 {
     /// Create a new extent if not found.
     pub(super) fn extent_get_pblock_create(
         &mut self,
-        inode_ref: &mut Ext4InodeRef,
+        inode_ref: &mut InodeRef,
         iblock: LBlockId,
         block_count: u32,
     ) -> Result<PBlockId> {
@@ -119,7 +119,7 @@ impl Ext4 {
     /// the node needs to be split.
     pub(super) fn insert_extent(
         &self,
-        inode_ref: &mut Ext4InodeRef,
+        inode_ref: &mut InodeRef,
         leaf: &ExtentSearchPath,
         new_ext: &Ext4Extent,
     ) -> bool {

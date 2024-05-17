@@ -2,14 +2,14 @@ use crate::prelude::*;
 
 /// Mount point descriptor
 #[derive(Clone)]
-pub struct Ext4MountPoint {
+pub struct MountPoint {
     /// Mount done flag
     pub mounted: bool,
     ///  Mount point name
     pub mount_name: String,
 }
 
-impl Ext4MountPoint {
+impl MountPoint {
     pub fn new(name: &str) -> Self {
         Self {
             mounted: false,
@@ -18,7 +18,7 @@ impl Ext4MountPoint {
     }
 }
 
-impl Debug for Ext4MountPoint {
+impl Debug for MountPoint {
     fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
         write!(f, "Ext4MountPoint {{ mount_name: {:?} }}", self.mount_name)
     }

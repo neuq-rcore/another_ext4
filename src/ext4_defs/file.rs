@@ -1,10 +1,10 @@
-use super::Ext4MountPoint;
+use super::MountPoint;
 use crate::prelude::*;
 
 /// 文件描述符
-pub struct Ext4File {
+pub struct File {
     /// 挂载点句柄
-    pub mp: *mut Ext4MountPoint,
+    pub mp: *mut MountPoint,
     /// 文件 inode id
     pub inode: InodeId,
     /// 打开标志
@@ -15,7 +15,7 @@ pub struct Ext4File {
     pub fpos: usize,
 }
 
-impl Default for Ext4File {
+impl Default for File {
     fn default() -> Self {
         Self {
             mp: ptr::null_mut(),

@@ -2,9 +2,9 @@ use super::Ext4;
 
 impl Ext4 {
     /// start transaction
-    pub(super) fn ext4_trans_start(&self) {}
+    pub(super) fn trans_start(&self) {}
 
     /// stop transaction
     #[allow(unused)]
-    pub(super) fn ext4_trans_abort(&self) {}
+    pub(super) fn trans_abort(&self) {}
 }

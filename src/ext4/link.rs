@@ -3,10 +3,10 @@ use crate::prelude::*;
 use crate::ext4_defs::*;
 
 impl Ext4 {
-    pub fn ext4_link(
+    pub fn link(
         &mut self,
-        parent: &mut Ext4InodeRef,
-        child: &mut Ext4InodeRef,
+        parent: &mut InodeRef,
+        child: &mut InodeRef,
         name: &str,
     ) -> Result<()> {
         // Add entry to parent directory

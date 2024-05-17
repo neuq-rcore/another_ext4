@@ -4,18 +4,18 @@
 //! linear array of directory entries.
 
 use super::crc::*;
-use super::Ext4Superblock;
+use super::Superblock;
 use crate::constants::*;
 use crate::prelude::*;
 use alloc::string::FromUtf8Error;
 
 #[repr(C)]
-pub union Ext4DirEnInner {
+pub union DirEnInner {
     pub name_length_high: u8, // 高8位的文件名长度
     pub inode_type: FileType, // 引用的inode的类型（在rev >= 0.5中）
 }
 
-impl Debug for Ext4DirEnInner {
+impl Debug for DirEnInner {
     fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
         unsafe {
             write!(
@@ -27,7 +27,7 @@ impl Debug for Ext4DirEnInner {
     }
 }
 
-impl Default for Ext4DirEnInner {
+impl Default for DirEnInner {
     fn default() -> Self {
         Self {
             name_length_high: 0,
@@ -37,27 +37,27 @@ impl Default for Ext4DirEnInner {
 
 #[repr(C)]
 #[derive(Debug)]
-pub struct Ext4DirEntry {
+pub struct DirEntry {
     inode: InodeId,        // 该目录项指向的inode的编号
     rec_len: u16,          // 到下一个目录项的距离
     name_len: u8,          // 低8位的文件名长度
-    inner: Ext4DirEnInner, // 联合体成员
+    inner: DirEnInner, // 联合体成员
     name: [u8; 255],       // 文件名
 }
 
-impl Default for Ext4DirEntry {
+impl Default for DirEntry {
     fn default() -> Self {
         Self {
             inode: 0,
             rec_len: 0,
             name_len: 0,
-            inner: Ext4DirEnInner::default(),
+            inner: DirEnInner::default(),
             name: [0; 255],
         }
     }
 }
 
-impl Ext4DirEntry {
+impl DirEntry {
     /// Create a new directory entry
     pub fn new(inode: InodeId, rec_len: u16, name: &str, dirent_type: FileType) -> Self {
         let mut name_bytes = [0u8; 255];
@@ -67,7 +67,7 @@ impl Ext4DirEntry {
             inode,
             rec_len,
             name_len: name_len as u8,
-            inner: Ext4DirEnInner {
+            inner: DirEnInner {
                 inode_type: dirent_type,
             },
             name: name_bytes,
@@ -124,7 +124,7 @@ impl Ext4DirEntry {
     /// Get the required size to save this directory entry, 4-byte aligned
     pub fn required_size(name_len: usize) -> usize {
         // u32 + u16 + u8 + Ext4DirEnInner + name -> align to 4
-        (core::mem::size_of::<Ext4FakeDirEntry>() + name_len + 3) / 4 * 4
+        (core::mem::size_of::<FakeDirEntry>() + name_len + 3) / 4 * 4
     }
 
     /// Get the used size of this directory entry, 4-bytes alighed
@@ -132,7 +132,7 @@ impl Ext4DirEntry {
         Self::required_size(self.name_len as usize)
     }
 
-    pub fn calc_csum(&self, s: &Ext4Superblock, blk_data: &[u8]) -> u32 {
+    pub fn calc_csum(&self, s: &Superblock, blk_data: &[u8]) -> u32 {
         let ino_index = self.inode;
         let ino_gen = 0 as u32;
 
@@ -150,9 +150,9 @@ impl Ext4DirEntry {
     }
 
     pub fn copy_to_byte_slice(&self, slice: &mut [u8], offset: usize) {
-        let de_ptr = self as *const Ext4DirEntry as *const u8;
+        let de_ptr = self as *const DirEntry as *const u8;
         let slice_ptr = slice as *mut [u8] as *mut u8;
-        let count = core::mem::size_of::<Ext4DirEntry>();
+        let count = core::mem::size_of::<DirEntry>();
         unsafe {
             core::ptr::copy_nonoverlapping(de_ptr, slice_ptr.add(offset), count);
         }
@@ -161,7 +161,7 @@ impl Ext4DirEntry {
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Default)]
-pub struct Ext4DirEntryTail {
+pub struct DirEntryTail {
     pub reserved_zero1: u32,
     pub rec_len: u16,
     pub reserved_zero2: u8,
@@ -169,17 +169,17 @@ pub struct Ext4DirEntryTail {
     pub checksum: u32, // crc32c(uuid+inum+dirblock)
 }
 
-impl Ext4DirEntryTail {
+impl DirEntryTail {
     pub fn from_bytes(data: &mut [u8], blocksize: usize) -> Option<Self> {
         unsafe {
             let ptr = data as *mut [u8] as *mut u8;
-            let t = *(ptr.add(blocksize - core::mem::size_of::<Ext4DirEntryTail>())
-                as *mut Ext4DirEntryTail);
+            let t = *(ptr.add(blocksize - core::mem::size_of::<DirEntryTail>())
+                as *mut DirEntryTail);
             if t.reserved_zero1 != 0 || t.reserved_zero2 != 0 {
                 log::info!("t.reserved_zero1");
                 return None;
             }
-            if t.rec_len.to_le() != core::mem::size_of::<Ext4DirEntryTail>() as u16 {
+            if t.rec_len.to_le() != core::mem::size_of::<DirEntryTail>() as u16 {
                 log::info!("t.rec_len");
                 return None;
             }
@@ -191,14 +191,14 @@ impl Ext4DirEntryTail {
         }
     }
 
-    pub fn set_csum(&mut self, s: &Ext4Superblock, diren: &Ext4DirEntry, blk_data: &[u8]) {
+    pub fn set_csum(&mut self, s: &Superblock, diren: &DirEntry, blk_data: &[u8]) {
         self.checksum = diren.calc_csum(s, blk_data);
     }
 
     pub fn copy_to_byte_slice(&self, slice: &mut [u8], offset: usize) {
-        let de_ptr = self as *const Ext4DirEntryTail as *const u8;
+        let de_ptr = self as *const DirEntryTail as *const u8;
         let slice_ptr = slice as *mut [u8] as *mut u8;
-        let count = core::mem::size_of::<Ext4DirEntryTail>();
+        let count = core::mem::size_of::<DirEntryTail>();
         unsafe {
             core::ptr::copy_nonoverlapping(de_ptr, slice_ptr.add(offset), count);
         }
@@ -207,7 +207,7 @@ impl Ext4DirEntryTail {
 
 /// Fake dir entry. A normal entry without `name` field`
 #[repr(C)]
-pub struct Ext4FakeDirEntry {
+pub struct FakeDirEntry {
     inode: u32,
     entry_length: u16,
     name_length: u8,

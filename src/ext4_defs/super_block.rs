@@ -5,14 +5,14 @@
 //! See [`super::block_group`] for details.
 
 use super::BlockDevice;
-use super::Ext4Inode;
+use super::Inode;
 use crate::constants::*;
 use crate::prelude::*;
 
 // 结构体表示超级块
 #[repr(C)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Ext4Superblock {
+pub struct Superblock {
     inodes_count: u32,             // 节点数
     blocks_count_lo: u32,          // 块数
     reserved_blocks_count_lo: u32, // 保留块数
@@ -112,15 +112,15 @@ pub struct Ext4Superblock {
     checksum: u32,             // crc32c(superblock)
 }
 
-impl TryFrom<Vec<u8>> for Ext4Superblock {
+impl TryFrom<Vec<u8>> for Superblock {
     type Error = u64;
     fn try_from(value: Vec<u8>) -> core::result::Result<Self, u64> {
-        let data = &value[..size_of::<Ext4Superblock>()];
+        let data = &value[..size_of::<Superblock>()];
         Ok(unsafe { core::ptr::read(data.as_ptr() as *const _) })
     }
 }
 
-impl Ext4Superblock {
+impl Superblock {
     pub fn first_data_block(&self) -> u32 {
         self.first_data_block
     }
@@ -170,7 +170,7 @@ impl Ext4Superblock {
     }
 
     /// Returns the size of inode structure.
-    pub fn inode_size_file(&self, inode: &Ext4Inode) -> u64 {
+    pub fn inode_size_file(&self, inode: &Inode) -> u64 {
         let mode = inode.mode;
 
         // 获取inode的低32位大小
@@ -231,7 +231,7 @@ impl Ext4Superblock {
     
     pub fn sync_to_disk(&self, block_device: Arc<dyn BlockDevice>) {
         let data = unsafe {
-            core::slice::from_raw_parts(self as *const _ as *const u8, size_of::<Ext4Superblock>())
+            core::slice::from_raw_parts(self as *const _ as *const u8, size_of::<Superblock>())
         };
         block_device.write_offset(BASE_OFFSET, data);
     }

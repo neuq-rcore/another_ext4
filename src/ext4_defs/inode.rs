@@ -1,6 +1,6 @@
 //! # The Defination of Ext4 Inode Table Entry
 //!
-//! The inode table is a linear array of struct `Ext4Inode`. The table is sized to have
+//! The inode table is a linear array of struct `Inode`. The table is sized to have
 //! enough blocks to store at least `sb.inode_size * sb.inodes_per_group` bytes.
 //!
 //! The number of the block group containing an inode can be calculated as
@@ -9,9 +9,9 @@
 
 use super::crc::*;
 use super::BlockDevice;
-use super::Ext4BlockGroupDesc;
-use super::Ext4ExtentHeader;
-use super::Ext4Superblock;
+use super::BlockGroupDesc;
+use super::ExtentHeader;
+use super::Superblock;
 use super::{ExtentNode, ExtentNodeMut};
 use crate::constants::*;
 use crate::prelude::*;
@@ -29,7 +29,7 @@ pub struct Linux2 {
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Ext4Inode {
+pub struct Inode {
     pub mode: u16,
     pub uid: u16,
     pub size: u32,
@@ -60,15 +60,15 @@ pub struct Ext4Inode {
 }
 
 /// Because `[u8; 60]` cannot derive `Default`, we implement it manually.
-impl Default for Ext4Inode {
+impl Default for Inode {
     fn default() -> Self {
         unsafe { mem::zeroed() }
     }
 }
 
-impl Ext4Inode {
+impl Inode {
     pub fn from_bytes(bytes: &[u8]) -> Self {
-        unsafe { *(bytes.as_ptr() as *const Ext4Inode) }
+        unsafe { *(bytes.as_ptr() as *const Inode) }
     }
 
     pub fn flags(&self) -> u32 {
@@ -87,7 +87,7 @@ impl Ext4Inode {
         self.mode |= mode;
     }
 
-    pub fn inode_type(&self, super_block: &Ext4Superblock) -> u32 {
+    pub fn inode_type(&self, super_block: &Superblock) -> u32 {
         let mut v = self.mode;
 
         if super_block.creator_os() == EXT4_SUPERBLOCK_OS_HURD {
@@ -97,11 +97,11 @@ impl Ext4Inode {
         (v & EXT4_INODE_MODE_TYPE_MASK) as u32
     }
 
-    pub fn is_dir(&self, super_block: &Ext4Superblock) -> bool {
+    pub fn is_dir(&self, super_block: &Superblock) -> bool {
         self.inode_type(super_block) == EXT4_INODE_MODE_DIRECTORY as u32
     }
 
-    pub fn is_softlink(&self, super_block: &Ext4Superblock) -> bool {
+    pub fn is_softlink(&self, super_block: &Superblock) -> bool {
         self.inode_type(super_block) == EXT4_INODE_MODE_SOFTLINK as u32
     }
 
@@ -158,7 +158,7 @@ impl Ext4Inode {
         self.i_extra_isize = extra_isize;
     }
 
-    pub fn set_inode_checksum_value(&mut self, super_block: &Ext4Superblock, checksum: u32) {
+    pub fn set_inode_checksum_value(&mut self, super_block: &Superblock, checksum: u32) {
         let inode_size = super_block.inode_size();
 
         self.osd2.l_i_checksum_lo = ((checksum << 16) >> 16) as u16;
@@ -177,13 +177,13 @@ impl Ext4Inode {
 
     fn copy_to_byte_slice(&self, slice: &mut [u8]) {
         unsafe {
-            let inode_ptr = self as *const Ext4Inode as *const u8;
+            let inode_ptr = self as *const Inode as *const u8;
             let array_ptr = slice.as_ptr() as *mut u8;
             core::ptr::copy_nonoverlapping(inode_ptr, array_ptr, 0x9c);
         }
     }
 
-    fn calc_checksum(&mut self, inode_id: u32, super_block: &Ext4Superblock) -> u32 {
+    fn calc_checksum(&mut self, inode_id: u32, super_block: &Superblock) -> u32 {
         let inode_size = super_block.inode_size();
 
         let ino_index = inode_id as u32;
@@ -216,7 +216,7 @@ impl Ext4Inode {
         checksum
     }
 
-    fn set_checksum(&mut self, super_block: &Ext4Superblock, inode_id: u32) {
+    fn set_checksum(&mut self, super_block: &Superblock, inode_id: u32) {
         let inode_size = super_block.inode_size();
         let checksum = self.calc_checksum(inode_id, super_block);
 
@@ -247,38 +247,38 @@ impl Ext4Inode {
     /// node of the extent tree
     pub fn extent_init(&mut self) {
         self.set_flags(EXT4_INODE_FLAG_EXTENTS);
-        let header = Ext4ExtentHeader::new(0, 4, 0, 0);
-        let header_ptr = &header as *const Ext4ExtentHeader as *const u8;
+        let header = ExtentHeader::new(0, 4, 0, 0);
+        let header_ptr = &header as *const ExtentHeader as *const u8;
         let array_ptr = &mut self.block as *mut u8;
         unsafe {
-            core::ptr::copy_nonoverlapping(header_ptr, array_ptr, size_of::<Ext4ExtentHeader>());
+            core::ptr::copy_nonoverlapping(header_ptr, array_ptr, size_of::<ExtentHeader>());
         }
     }
 }
 
-/// A combination of an `Ext4Inode` and its id
+/// A combination of an `Inode` and its id
 #[derive(Clone)]
-pub struct Ext4InodeRef {
+pub struct InodeRef {
     pub inode_id: InodeId,
-    pub inode: Ext4Inode,
+    pub inode: Inode,
 }
 
-impl Ext4InodeRef {
-    pub fn new(inode_id: InodeId, inode: Ext4Inode) -> Self {
+impl InodeRef {
+    pub fn new(inode_id: InodeId, inode: Inode) -> Self {
         Self { inode_id, inode }
     }
 
     pub fn read_from_disk(
         block_device: Arc<dyn BlockDevice>,
-        super_block: &Ext4Superblock,
+        super_block: &Superblock,
         inode_id: InodeId,
     ) -> Self {
         let pos = Self::inode_disk_pos(super_block, block_device.clone(), inode_id);
         let data = block_device.read_offset(pos);
-        let inode_data = &data[..core::mem::size_of::<Ext4Inode>()];
+        let inode_data = &data[..core::mem::size_of::<Inode>()];
         Self {
             inode_id,
-            inode: Ext4Inode::from_bytes(inode_data),
+            inode: Inode::from_bytes(inode_data),
         }
     }
 
@@ -294,7 +294,7 @@ impl Ext4InodeRef {
     /// To get the byte address within the inode table, use
     /// `offset = index * sb.inode_size`.
     fn inode_disk_pos(
-        super_block: &Ext4Superblock,
+        super_block: &Superblock,
         block_device: Arc<dyn BlockDevice>,
         inode_id: InodeId,
     ) -> usize {
@@ -303,18 +303,18 @@ impl Ext4InodeRef {
         let group = (inode_id - 1) / inodes_per_group;
         let index = (inode_id - 1) % inodes_per_group;
 
-        let bg = Ext4BlockGroupDesc::load(block_device, super_block, group as usize).unwrap();
+        let bg = BlockGroupDesc::load(block_device, super_block, group as usize).unwrap();
         bg.inode_table_first_block() as usize * BLOCK_SIZE + (index * inode_size as u32) as usize
     }
 
     pub fn sync_to_disk_without_csum(
         &self,
         block_device: Arc<dyn BlockDevice>,
-        super_block: &Ext4Superblock,
+        super_block: &Superblock,
     ) -> Result<()> {
         let disk_pos = Self::inode_disk_pos(super_block, block_device.clone(), self.inode_id);
         let data = unsafe {
-            core::slice::from_raw_parts(&self.inode as *const _ as *const u8, size_of::<Ext4Inode>())
+            core::slice::from_raw_parts(&self.inode as *const _ as *const u8, size_of::<Inode>())
         };
         block_device.write_offset(disk_pos, data);
         Ok(())
@@ -323,7 +323,7 @@ impl Ext4InodeRef {
     pub fn sync_to_disk_with_csum(
         &mut self,
         block_device: Arc<dyn BlockDevice>,
-        super_block: &Ext4Superblock,
+        super_block: &Superblock,
     ) -> Result<()> {
         self.inode.set_checksum(super_block, self.inode_id);
         self.sync_to_disk_without_csum(block_device, super_block)

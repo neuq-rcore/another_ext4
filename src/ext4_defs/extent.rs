@@ -1,14 +1,14 @@
 //! The Defination of Ext4 Extent (Header, Index)
 //!
 //! Extents are arranged as a tree. Each node of the tree begins with a struct
-//! [`Ext4ExtentHeader`].
+//! [`ExtentHeader`].
 //!
 //! If the node is an interior node (eh.depth > 0), the header is followed by
-//! eh.entries_count instances of struct [`Ext4ExtentIndex`]; each of these index
+//! eh.entries_count instances of struct [`ExtentIndex`]; each of these index
 //! entries points to a block containing more nodes in the extent tree.
 //!
 //! If the node is a leaf node (eh.depth == 0), then the header is followed by
-//! eh.entries_count instances of struct [`Ext4Extent`]; these instances point
+//! eh.entries_count instances of struct [`Extent`]; these instances point
 //! to the file's data blocks. The root node of the extent tree is stored in
 //! inode.i_block, which allows for the first four extents to be recorded without
 //! the use of extra metadata blocks.
@@ -18,7 +18,7 @@ use crate::prelude::*;
 
 #[derive(Debug, Default, Clone, Copy)]
 #[repr(C)]
-pub struct Ext4ExtentHeader {
+pub struct ExtentHeader {
     /// Magic number, 0xF30A.
     magic: u16,
 
@@ -40,7 +40,7 @@ pub struct Ext4ExtentHeader {
     generation: u32,
 }
 
-impl Ext4ExtentHeader {
+impl ExtentHeader {
     pub fn new(entries_count: u16, max_entries_count: u16, depth: u16, generation: u32) -> Self {
         Self {
             magic: EXT4_EXTENT_MAGIC,
@@ -53,7 +53,7 @@ impl Ext4ExtentHeader {
 
     /// Loads an extent header from a data block.
     pub fn load_from_block(block_data: &[u8]) -> &Self {
-        unsafe { &*(block_data.as_ptr() as *const Ext4ExtentHeader) }
+        unsafe { &*(block_data.as_ptr() as *const ExtentHeader) }
     }
 
     // 获取extent header的魔数
@@ -109,7 +109,7 @@ impl Ext4ExtentHeader {
 
 #[derive(Debug, Default, Clone, Copy)]
 #[repr(C)]
-pub struct Ext4ExtentIndex {
+pub struct ExtentIndex {
     /// This index node covers file blocks from ‘block’ onward.
     pub first_block: u32,
 
@@ -124,7 +124,7 @@ pub struct Ext4ExtentIndex {
     pub padding: u16,
 }
 
-impl Ext4ExtentIndex {
+impl ExtentIndex {
     /// The physical block number of the extent node that is the next level lower in the tree
     pub fn leaf(&self) -> PBlockId {
         (self.leaf_hi as PBlockId) << 32 | self.leaf_lo as PBlockId
@@ -244,21 +244,21 @@ impl<'a> ExtentNode<'a> {
     }
 
     /// Get a immutable reference to the extent header
-    pub fn header(&self) -> &Ext4ExtentHeader {
-        unsafe { &*(self.raw_data.as_ptr() as *const Ext4ExtentHeader) }
+    pub fn header(&self) -> &ExtentHeader {
+        unsafe { &*(self.raw_data.as_ptr() as *const ExtentHeader) }
     }
 
     /// Get a immutable reference to the extent at a given index
     pub fn extent_at(&self, index: usize) -> &Ext4Extent {
         unsafe {
-            &*((self.header() as *const Ext4ExtentHeader).add(1) as *const Ext4Extent).add(index)
+            &*((self.header() as *const ExtentHeader).add(1) as *const Ext4Extent).add(index)
         }
     }
 
     /// Get a immmutable reference to the extent indexat a given index
-    pub fn extent_index_at(&self, index: usize) -> &Ext4ExtentIndex {
+    pub fn extent_index_at(&self, index: usize) -> &ExtentIndex {
         unsafe {
-            &*((self.header() as *const Ext4ExtentHeader).add(1) as *const Ext4ExtentIndex)
+            &*((self.header() as *const ExtentHeader).add(1) as *const ExtentIndex)
                 .add(index)
         }
     }
@@ -337,42 +337,42 @@ impl<'a> ExtentNodeMut<'a> {
     }
 
     /// Get a immutable reference to the extent header
-    pub fn header(&self) -> &Ext4ExtentHeader {
-        unsafe { &*(self.raw_data.as_ptr() as *const Ext4ExtentHeader) }
+    pub fn header(&self) -> &ExtentHeader {
+        unsafe { &*(self.raw_data.as_ptr() as *const ExtentHeader) }
     }
 
     /// Get a mutable reference to the extent header
-    pub fn header_mut(&mut self) -> &mut Ext4ExtentHeader {
-        unsafe { &mut *(self.raw_data.as_mut_ptr() as *mut Ext4ExtentHeader) }
+    pub fn header_mut(&mut self) -> &mut ExtentHeader {
+        unsafe { &mut *(self.raw_data.as_mut_ptr() as *mut ExtentHeader) }
     }
 
     /// Get a immutable reference to the extent at a given index
     pub fn extent_at(&self, index: usize) -> &'static Ext4Extent {
         unsafe {
-            &*((self.header() as *const Ext4ExtentHeader).add(1) as *const Ext4Extent).add(index)
+            &*((self.header() as *const ExtentHeader).add(1) as *const Ext4Extent).add(index)
         }
     }
 
     /// Get a mutable reference to the extent at a given index
     pub fn extent_mut_at(&mut self, index: usize) -> &'static mut Ext4Extent {
         unsafe {
-            &mut *((self.header_mut() as *mut Ext4ExtentHeader).add(1) as *mut Ext4Extent)
+            &mut *((self.header_mut() as *mut ExtentHeader).add(1) as *mut Ext4Extent)
                 .add(index)
         }
     }
 
     /// Get a immutable reference to the extent index at a given index
-    pub fn extent_index_at(&self, index: usize) -> &'static Ext4ExtentIndex {
+    pub fn extent_index_at(&self, index: usize) -> &'static ExtentIndex {
         unsafe {
-            &*((self.header() as *const Ext4ExtentHeader).add(1) as *const Ext4ExtentIndex)
+            &*((self.header() as *const ExtentHeader).add(1) as *const ExtentIndex)
                 .add(index)
         }
     }
 
     /// Get a mutable reference to the extent index at a given index
-    pub fn extent_index_mut_at(&mut self, index: usize) -> &'static mut Ext4ExtentIndex {
+    pub fn extent_index_mut_at(&mut self, index: usize) -> &'static mut ExtentIndex {
         unsafe {
-            &mut *((self.header_mut() as *mut Ext4ExtentHeader).add(1) as *mut Ext4ExtentIndex)
+            &mut *((self.header_mut() as *mut ExtentHeader).add(1) as *mut ExtentIndex)
                 .add(index)
         }
     }

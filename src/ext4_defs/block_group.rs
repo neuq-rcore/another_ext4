@@ -10,13 +10,13 @@
 use super::crc::*;
 use super::Bitmap;
 use super::BlockDevice;
-use super::Ext4Superblock;
+use super::Superblock;
 use crate::constants::*;
 use crate::prelude::*;
 
 #[derive(Debug, Default, Clone, Copy)]
 #[repr(C, packed)]
-pub struct Ext4BlockGroupDesc {
+pub struct BlockGroupDesc {
     block_bitmap_lo: u32,            // 块位图块
     inode_bitmap_lo: u32,            // 节点位图块
     inode_table_first_block_lo: u32, // 节点表块
@@ -43,18 +43,18 @@ pub struct Ext4BlockGroupDesc {
     reserved: u32,                   // 填充
 }
 
-impl TryFrom<&[u8]> for Ext4BlockGroupDesc {
+impl TryFrom<&[u8]> for BlockGroupDesc {
     type Error = u64;
     fn try_from(data: &[u8]) -> core::result::Result<Self, u64> {
-        let data = &data[..size_of::<Ext4BlockGroupDesc>()];
+        let data = &data[..size_of::<BlockGroupDesc>()];
         Ok(unsafe { core::ptr::read(data.as_ptr() as *const _) })
     }
 }
 
-impl Ext4BlockGroupDesc {
+impl BlockGroupDesc {
     pub fn load(
         block_device: Arc<dyn BlockDevice>,
-        super_block: &Ext4Superblock,
+        super_block: &Superblock,
         block_group_id: usize,
     ) -> core::result::Result<Self, u64> {
         let dsc_cnt = BLOCK_SIZE / super_block.desc_size() as usize;
@@ -67,14 +67,14 @@ impl Ext4BlockGroupDesc {
         let data = block_device.read_offset(block_id * BLOCK_SIZE);
 
         let block_group_data =
-            &data[offset as usize..offset as usize + size_of::<Ext4BlockGroupDesc>()];
+            &data[offset as usize..offset as usize + size_of::<BlockGroupDesc>()];
 
-        let bg = Ext4BlockGroupDesc::try_from(block_group_data);
+        let bg = BlockGroupDesc::try_from(block_group_data);
 
         bg
     }
 
-    pub fn get_block_bitmap_block(&self, s: &Ext4Superblock) -> u64 {
+    pub fn get_block_bitmap_block(&self, s: &Superblock) -> u64 {
         let mut v = self.block_bitmap_lo as u64;
         let desc_size = s.desc_size();
         if desc_size > EXT4_MIN_BLOCK_GROUP_DESCRIPTOR_SIZE {
@@ -83,7 +83,7 @@ impl Ext4BlockGroupDesc {
         v
     }
 
-    pub fn get_inode_bitmap_block(&self, s: &Ext4Superblock) -> u64 {
+    pub fn get_inode_bitmap_block(&self, s: &Superblock) -> u64 {
         let mut v = self.inode_bitmap_lo as u64;
         let desc_size = s.desc_size();
         if desc_size > EXT4_MIN_BLOCK_GROUP_DESCRIPTOR_SIZE {
@@ -92,7 +92,7 @@ impl Ext4BlockGroupDesc {
         v
     }
 
-    pub fn get_itable_unused(&mut self, s: &Ext4Superblock) -> u32 {
+    pub fn get_itable_unused(&mut self, s: &Superblock) -> u32 {
         let mut v = self.itable_unused_lo as u32;
         if s.desc_size() > EXT4_MIN_BLOCK_GROUP_DESCRIPTOR_SIZE {
             v |= ((self.itable_unused_hi as u64) << 32) as u32;
@@ -100,7 +100,7 @@ impl Ext4BlockGroupDesc {
         v
     }
 
-    pub fn get_used_dirs_count(&self, s: &Ext4Superblock) -> u32 {
+    pub fn get_used_dirs_count(&self, s: &Superblock) -> u32 {
         let mut v = self.used_dirs_count_lo as u32;
         if s.desc_size() > EXT4_MIN_BLOCK_GROUP_DESCRIPTOR_SIZE {
             v |= ((self.used_dirs_count_hi as u64) << 32) as u32;
@@ -108,21 +108,21 @@ impl Ext4BlockGroupDesc {
         v
     }
 
-    pub fn set_used_dirs_count(&mut self, s: &Ext4Superblock, cnt: u32) {
+    pub fn set_used_dirs_count(&mut self, s: &Superblock, cnt: u32) {
         self.itable_unused_lo = ((cnt << 16) >> 16) as u16;
         if s.desc_size() > EXT4_MIN_BLOCK_GROUP_DESCRIPTOR_SIZE {
             self.itable_unused_hi = (cnt >> 16) as u16;
         }
     }
 
-    pub fn set_itable_unused(&mut self, s: &Ext4Superblock, cnt: u32) {
+    pub fn set_itable_unused(&mut self, s: &Superblock, cnt: u32) {
         self.itable_unused_lo = ((cnt << 16) >> 16) as u16;
         if s.desc_size() > EXT4_MIN_BLOCK_GROUP_DESCRIPTOR_SIZE {
             self.itable_unused_hi = (cnt >> 16) as u16;
         }
     }
 
-    pub fn set_free_inodes_count(&mut self, s: &Ext4Superblock, cnt: u32) {
+    pub fn set_free_inodes_count(&mut self, s: &Superblock, cnt: u32) {
         self.free_inodes_count_lo = ((cnt << 16) >> 16) as u16;
         if s.desc_size() > EXT4_MIN_BLOCK_GROUP_DESCRIPTOR_SIZE {
             self.free_inodes_count_hi = (cnt >> 16) as u16;
@@ -141,7 +141,7 @@ impl Ext4BlockGroupDesc {
         &self,
         block_device: Arc<dyn BlockDevice>,
         bgid: usize,
-        super_block: &Ext4Superblock,
+        super_block: &Superblock,
     ) {
         let dsc_cnt = BLOCK_SIZE / super_block.desc_size() as usize;
         // let dsc_per_block = dsc_cnt;
@@ -154,13 +154,13 @@ impl Ext4BlockGroupDesc {
         let data = unsafe {
             core::slice::from_raw_parts(
                 self as *const _ as *const u8,
-                size_of::<Ext4BlockGroupDesc>(),
+                size_of::<BlockGroupDesc>(),
             )
         };
         block_device.write_offset(block_id * BLOCK_SIZE + offset, data);
     }
 
-    pub fn calc_checksum(&mut self, bgid: u32, super_block: &Ext4Superblock) -> u16 {
+    pub fn calc_checksum(&mut self, bgid: u32, super_block: &Superblock) -> u16 {
         let desc_size = super_block.desc_size();
 
         let orig_checksum = self.checksum;
@@ -192,7 +192,7 @@ impl Ext4BlockGroupDesc {
         crc
     }
 
-    pub fn set_block_group_checksum(&mut self, bgid: u32, super_block: &Ext4Superblock) {
+    pub fn set_block_group_checksum(&mut self, bgid: u32, super_block: &Superblock) {
         let csum = self.calc_checksum(bgid, super_block);
         self.checksum = csum;
     }
@@ -201,13 +201,13 @@ impl Ext4BlockGroupDesc {
         &mut self,
         block_device: Arc<dyn BlockDevice>,
         bgid: usize,
-        super_block: &Ext4Superblock,
+        super_block: &Superblock,
     ) {
         self.set_block_group_checksum(bgid as u32, super_block);
         self.sync_to_disk(block_device, bgid, super_block)
     }
 
-    pub fn set_inode_bitmap_csum(&mut self, s: &Ext4Superblock, bitmap: &Bitmap) {
+    pub fn set_inode_bitmap_csum(&mut self, s: &Superblock, bitmap: &Bitmap) {
         let desc_size = s.desc_size();
 
         let csum = Self::calc_inode_bitmap_csum(&bitmap, s);
@@ -223,7 +223,7 @@ impl Ext4BlockGroupDesc {
         }
     }
 
-    pub fn set_block_bitmap_csum(&mut self, s: &Ext4Superblock, bitmap: &Bitmap) {
+    pub fn set_block_bitmap_csum(&mut self, s: &Superblock, bitmap: &Bitmap) {
         let desc_size = s.desc_size();
 
         let csum = Self::calc_block_bitmap_csum(&bitmap, s);
@@ -252,7 +252,7 @@ impl Ext4BlockGroupDesc {
         self.free_blocks_count_hi = (cnt >> 32) as u16;
     }
 
-    pub fn calc_inode_bitmap_csum(bitmap: &Bitmap, s: &Ext4Superblock) -> u32 {
+    pub fn calc_inode_bitmap_csum(bitmap: &Bitmap, s: &Superblock) -> u32 {
         let inodes_per_group = s.inodes_per_group();
         let uuid = s.uuid();
         let mut csum = ext4_crc32c(EXT4_CRC32_INIT, &uuid, uuid.len() as u32);
@@ -260,7 +260,7 @@ impl Ext4BlockGroupDesc {
         csum
     }
 
-    pub fn calc_block_bitmap_csum(bitmap: &Bitmap, s: &Ext4Superblock) -> u32 {
+    pub fn calc_block_bitmap_csum(bitmap: &Bitmap, s: &Superblock) -> u32 {
         let blocks_per_group = s.blocks_per_group();
         let uuid = s.uuid();
         let mut csum = ext4_crc32c(EXT4_CRC32_INIT, &uuid, uuid.len() as u32);

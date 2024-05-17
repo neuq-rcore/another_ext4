@@ -16,8 +16,8 @@ impl Ext4 {
         path: &str,
         flag: OpenFlags,
         ftype: FileType,
-        parent_inode: &Ext4InodeRef,
-    ) -> Result<Ext4File> {
+        parent_inode: &InodeRef,
+    ) -> Result<File> {
         info!("generic open: {}", path);
         // Search from the given parent inode
         let mut parent = parent_inode.clone();
@@ -44,7 +44,7 @@ impl Ext4 {
                         self.alloc_inode(FileType::Directory)
                     }?;
                     // Link the new inode
-                    self.ext4_link(&mut parent, &mut child, path)
+                    self.link(&mut parent, &mut child, path)
                         .map_err(|_| Ext4Error::with_message(ErrCode::ELINKFIAL, "link fail"))?;
                     // Write back parent and child
                     self.write_back_inode_with_csum(&mut parent);
@@ -53,13 +53,12 @@ impl Ext4 {
             }
         }
         // Reach the target
-        let mut file = Ext4File::default();
+        let mut file = File::default();
         file.inode = parent.inode_id;
         Ok(file)
     }
 
-    #[allow(unused)]
-    pub fn ext4_open(&mut self, path: &str, flags: &str, file_expect: bool) -> Result<Ext4File> {
+    pub fn open(&mut self, path: &str, flags: &str, file_expect: bool) -> Result<File> {
         // open flags
         let iflags = OpenFlags::from_str(flags).unwrap();
         // file type
@@ -70,22 +69,21 @@ impl Ext4 {
         };
         // TODO:journal
         if iflags.contains(OpenFlags::O_CREAT) {
-            self.ext4_trans_start();
+            self.trans_start();
         }
         // open file
         let res = self.generic_open(path, iflags, file_type, &self.get_root_inode_ref());
         res.map(|mut file| {
             // set mount point
             let mut ptr = Box::new(self.mount_point.clone());
-            file.mp = Box::as_mut(&mut ptr) as *mut Ext4MountPoint;
+            file.mp = Box::as_mut(&mut ptr) as *mut MountPoint;
             file
         })
     }
 
-    #[allow(unused)]
-    pub fn ext4_file_read(
+    pub fn read(
         &self,
-        file: &mut Ext4File,
+        file: &mut File,
         read_buf: &mut [u8],
         read_size: usize,
     ) -> Result<usize> {
@@ -109,7 +107,7 @@ impl Ext4 {
         // Calc the start block of reading
         let start_iblock = (file.fpos / BLOCK_SIZE) as LBlockId;
         // Calc the length that is not aligned to the block size
-        let mut misaligned = file.fpos % BLOCK_SIZE;
+        let misaligned = file.fpos % BLOCK_SIZE;
 
         let mut cursor = 0;
         let mut iblock = start_iblock;
@@ -151,7 +149,7 @@ impl Ext4 {
         Ok(cursor)
     }
 
-    pub fn ext4_file_write(&mut self, file: &mut Ext4File, data: &[u8]) -> Result<()> {
+    pub fn write(&mut self, file: &mut File, data: &[u8]) -> Result<()> {
         let size = data.len();
         let mut inode_ref = self.get_inode_ref(file.inode);
         // Sync ext file
