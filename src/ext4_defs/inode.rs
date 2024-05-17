@@ -15,6 +15,7 @@ use super::Superblock;
 use super::{ExtentNode, ExtentNodeMut};
 use crate::constants::*;
 use crate::prelude::*;
+use crate::AsBytes;
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -65,6 +66,8 @@ impl Default for Inode {
         unsafe { mem::zeroed() }
     }
 }
+
+impl AsBytes for Inode {}
 
 impl Inode {
     pub fn from_bytes(bytes: &[u8]) -> Self {
@@ -273,16 +276,16 @@ impl InodeRef {
         super_block: &Superblock,
         inode_id: InodeId,
     ) -> Self {
-        let pos = Self::inode_disk_pos(super_block, block_device.clone(), inode_id);
-        let data = block_device.read_offset(pos);
-        let inode_data = &data[..core::mem::size_of::<Inode>()];
+        let (block_id, offset) = Self::inode_disk_pos(super_block, block_device.clone(), inode_id);
+        let block = block_device.read_block(block_id);
         Self {
             inode_id,
-            inode: Inode::from_bytes(inode_data),
+            inode: Inode::from_bytes(block.read_offset(offset, size_of::<Inode>())),
         }
     }
 
-    /// Find the position of an inode in the block device.
+    /// Find the position of an inode in the block device. Return the
+    /// block id and the offset within the block.
     ///
     /// Each block group contains `sb.inodes_per_group` inodes.
     /// Because inode 0 is defined not to exist, this formula can
@@ -297,35 +300,36 @@ impl InodeRef {
         super_block: &Superblock,
         block_device: Arc<dyn BlockDevice>,
         inode_id: InodeId,
-    ) -> usize {
+    ) -> (PBlockId, usize) {
         let inodes_per_group = super_block.inodes_per_group();
-        let inode_size = super_block.inode_size();
-        let group = (inode_id - 1) / inodes_per_group;
-        let index = (inode_id - 1) % inodes_per_group;
+        let inode_size = super_block.inode_size() as usize;
+        let group = ((inode_id - 1) / inodes_per_group) as usize;
+        let index = ((inode_id - 1) % inodes_per_group) as usize;
 
-        let bg = BlockGroupDesc::load(block_device, super_block, group as usize).unwrap();
-        bg.inode_table_first_block() as usize * BLOCK_SIZE + (index * inode_size as u32) as usize
+        let bg = BlockGroupDesc::load(block_device, super_block, group);
+        let block_id = bg.inode_table_first_block() + (index * inode_size / BLOCK_SIZE) as PBlockId;
+        let offset = (index * inode_size) % BLOCK_SIZE;
+        (block_id, offset)
     }
 
     pub fn sync_to_disk_without_csum(
         &self,
         block_device: Arc<dyn BlockDevice>,
         super_block: &Superblock,
-    ) -> Result<()> {
-        let disk_pos = Self::inode_disk_pos(super_block, block_device.clone(), self.inode_id);
-        let data = unsafe {
-            core::slice::from_raw_parts(&self.inode as *const _ as *const u8, size_of::<Inode>())
-        };
-        block_device.write_offset(disk_pos, data);
-        Ok(())
+    ) {
+        let (block_id, offset) =
+            Self::inode_disk_pos(super_block, block_device.clone(), self.inode_id);
+        let mut block = block_device.read_block(block_id);
+        block.write_offset_as(offset, &self.inode);
+        block.sync_to_disk(block_device);
     }
 
     pub fn sync_to_disk_with_csum(
         &mut self,
         block_device: Arc<dyn BlockDevice>,
         super_block: &Superblock,
-    ) -> Result<()> {
+    ) {
         self.inode.set_checksum(super_block, self.inode_id);
-        self.sync_to_disk_without_csum(block_device, super_block)
+        self.sync_to_disk_without_csum(block_device, super_block);
     }
 }

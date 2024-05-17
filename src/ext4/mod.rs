@@ -24,8 +24,8 @@ impl Ext4 {
     pub fn load(block_device: Arc<dyn BlockDevice>) -> Result<Self> {
         // Load the superblock
         // TODO: if the main superblock is corrupted, should we load the backup?
-        let raw_data = block_device.read_offset(BASE_OFFSET);
-        let super_block = Superblock::try_from(raw_data).unwrap();
+        let block = block_device.read_block(0);
+        let super_block = block.read_offset_as::<Superblock>(BASE_OFFSET);
         // Root mount point
         let mount_point = MountPoint::new("/");
         // Create Ext4 instance
@@ -54,13 +54,12 @@ impl Ext4 {
     fn write_back_inode_with_csum(&self, inode_ref: &mut InodeRef) {
         inode_ref
             .sync_to_disk_with_csum(self.block_device.clone(), &self.super_block)
-            .unwrap()
+            
     }
 
     /// Write back an inode to block device without checksum
     fn write_back_inode_without_csum(&self, inode_ref: &mut InodeRef) {
         inode_ref
             .sync_to_disk_without_csum(self.block_device.clone(), &self.super_block)
-            .unwrap()
     }
 }

@@ -15,21 +15,21 @@ impl Ext4 {
 
         // Load block group descriptor
         let mut bg =
-            BlockGroupDesc::load(self.block_device.clone(), &self.super_block, bgid as usize)
-                .unwrap();
-        let block_bmap_offset = bg.get_block_bitmap_block(&self.super_block) as usize * BLOCK_SIZE;
+            BlockGroupDesc::load(self.block_device.clone(), &self.super_block, bgid as usize);
+
         // Load block bitmap
-        let raw_bitmap = &mut self.block_device.read_offset(block_bmap_offset);
-        let mut bitmap = Bitmap::new(raw_bitmap);
-        // Find and first free block
+        let bitmap_block_id = bg.get_block_bitmap_block(&self.super_block);
+        let mut bitmap_block = self.block_device.read_block(bitmap_block_id);
+        let mut bitmap = Bitmap::new(&mut bitmap_block.data);
+
+        // Find the first free block
         let fblock = bitmap
             .find_and_set_first_clear_bit(idx_in_bg as usize, 8 * BLOCK_SIZE)
             .ok_or(Ext4Error::new(ErrCode::ENOSPC))? as PBlockId;
 
         // Set block group checksum
         bg.set_block_bitmap_csum(&self.super_block, &bitmap);
-        self.block_device
-            .write_offset(block_bmap_offset, bitmap.as_raw());
+        self.block_device.write_block(&bitmap_block);
 
         // Update superblock free blocks count
         let free_blocks = self.super_block.free_blocks_count();
@@ -123,12 +123,8 @@ impl Ext4 {
 
         while bgid <= bg_count {
             // Load block group descriptor
-            let mut bg = BlockGroupDesc::load(
-                self.block_device.clone(),
-                &self.super_block,
-                bgid as usize,
-            )
-            .unwrap();
+            let mut bg =
+                BlockGroupDesc::load(self.block_device.clone(), &self.super_block, bgid as usize);
             // If there are no free inodes in this block group, try the next one
             if bg.free_inodes_count() == 0 {
                 bgid += 1;
@@ -136,24 +132,17 @@ impl Ext4 {
             }
 
             // Load inode bitmap
-            let inode_bitmap_block = bg.get_inode_bitmap_block(&self.super_block);
-            let mut raw_data = self
-                .block_device
-                .read_offset(inode_bitmap_block as usize * BLOCK_SIZE);
-            let inode_count = self.super_block.inode_count_in_group(bgid);
-            let bitmap_size: u32 = inode_count / 0x8;
-            let mut bitmap_data = &mut raw_data[..bitmap_size as usize];
-            let mut bitmap = Bitmap::new(&mut bitmap_data);
+            let bitmap_block_id = bg.get_inode_bitmap_block(&self.super_block);
+            let mut bitmap_block = self.block_device.read_block(bitmap_block_id);
+            let inode_count = self.super_block.inode_count_in_group(bgid) as usize;
+            let mut bitmap = Bitmap::new(&mut bitmap_block.data[..inode_count / 8]);
 
             // Find a free inode
-            let idx_in_bg = bitmap
-                .find_and_set_first_clear_bit(0, inode_count as usize)
-                .unwrap() as u32;
+            let idx_in_bg = bitmap.find_and_set_first_clear_bit(0, inode_count).unwrap() as u32;
 
             // Update bitmap in disk
-            self.block_device
-                .write_offset(inode_bitmap_block as usize * BLOCK_SIZE, &bitmap.as_raw());
             bg.set_inode_bitmap_csum(&self.super_block, &bitmap);
+            self.block_device.write_block(&bitmap_block);
 
             // Modify filesystem counters
             let free_inodes = bg.free_inodes_count() - 1;
@@ -167,9 +156,9 @@ impl Ext4 {
 
             // Decrease unused inodes count
             let mut unused = bg.get_itable_unused(&self.super_block);
-            let free = inode_count - unused as u32;
+            let free = inode_count as u32 - unused;
             if idx_in_bg >= free {
-                unused = inode_count - (idx_in_bg + 1);
+                unused = inode_count as u32 - (idx_in_bg + 1);
                 bg.set_itable_unused(&self.super_block, unused);
             }
 

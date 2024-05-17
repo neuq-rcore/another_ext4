@@ -13,6 +13,7 @@ use super::BlockDevice;
 use super::Superblock;
 use crate::constants::*;
 use crate::prelude::*;
+use crate::AsBytes;
 
 #[derive(Debug, Default, Clone, Copy)]
 #[repr(C, packed)]
@@ -43,20 +44,14 @@ pub struct BlockGroupDesc {
     reserved: u32,                   // 填充
 }
 
-impl TryFrom<&[u8]> for BlockGroupDesc {
-    type Error = u64;
-    fn try_from(data: &[u8]) -> core::result::Result<Self, u64> {
-        let data = &data[..size_of::<BlockGroupDesc>()];
-        Ok(unsafe { core::ptr::read(data.as_ptr() as *const _) })
-    }
-}
+impl AsBytes for BlockGroupDesc {}
 
 impl BlockGroupDesc {
     pub fn load(
         block_device: Arc<dyn BlockDevice>,
         super_block: &Superblock,
         block_group_id: usize,
-    ) -> core::result::Result<Self, u64> {
+    ) -> Self {
         let dsc_cnt = BLOCK_SIZE / super_block.desc_size() as usize;
         let dsc_id = block_group_id / dsc_cnt;
         let first_data_block = super_block.first_data_block();
@@ -64,14 +59,8 @@ impl BlockGroupDesc {
         let block_id = first_data_block as usize + dsc_id + 1;
         let offset = (block_group_id % dsc_cnt) * super_block.desc_size() as usize;
 
-        let data = block_device.read_offset(block_id * BLOCK_SIZE);
-
-        let block_group_data =
-            &data[offset as usize..offset as usize + size_of::<BlockGroupDesc>()];
-
-        let bg = BlockGroupDesc::try_from(block_group_data);
-
-        bg
+        let block = block_device.read_block(block_id as PBlockId);
+        block.read_offset_as::<Self>(offset)
     }
 
     pub fn get_block_bitmap_block(&self, s: &Superblock) -> u64 {
@@ -144,20 +133,14 @@ impl BlockGroupDesc {
         super_block: &Superblock,
     ) {
         let dsc_cnt = BLOCK_SIZE / super_block.desc_size() as usize;
-        // let dsc_per_block = dsc_cnt;
         let dsc_id = bgid / dsc_cnt;
-        // let first_meta_bg = super_block.first_meta_bg;
         let first_data_block = super_block.first_data_block();
         let block_id = first_data_block as usize + dsc_id + 1;
         let offset = (bgid % dsc_cnt) * super_block.desc_size() as usize;
 
-        let data = unsafe {
-            core::slice::from_raw_parts(
-                self as *const _ as *const u8,
-                size_of::<BlockGroupDesc>(),
-            )
-        };
-        block_device.write_offset(block_id * BLOCK_SIZE + offset, data);
+        let mut block = block_device.read_block(block_id as PBlockId);
+        block.write_offset_as(offset, self);
+        block.sync_to_disk(block_device);
     }
 
     pub fn calc_checksum(&mut self, bgid: u32, super_block: &Superblock) -> u16 {

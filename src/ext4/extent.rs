@@ -9,9 +9,8 @@ impl Ext4 {
     fn find_extent(&self, inode_ref: &InodeRef, iblock: LBlockId) -> Vec<ExtentSearchPath> {
         let mut path: Vec<ExtentSearchPath> = Vec::new();
         let mut ex_node = inode_ref.inode.extent();
-        ex_node.print();
         let mut pblock = 0;
-        let mut block_data: Vec<u8>;
+        let mut block_data: Block;
 
         // Go until leaf
         while ex_node.header().depth() > 0 {
@@ -26,9 +25,9 @@ impl Ext4 {
             // Load the next extent node
             let next = ex_idx.leaf();
             // Note: block data cannot be released until the next assigment
-            block_data = self.block_device.read_offset(next as usize * BLOCK_SIZE);
+            block_data = self.block_device.read_block(next);
             // Load the next extent header
-            ex_node = ExtentNode::from_bytes(&block_data);
+            ex_node = ExtentNode::from_bytes(&block_data.data);
             pblock = next;
         }
 
@@ -52,14 +51,12 @@ impl Ext4 {
         let leaf = path.last().unwrap();
         if let Ok(index) = leaf.index {
             // Note: block data must be defined here to keep it alive
-            let block_data: Vec<u8>;
+            let block_data: Block;
             let ex_node = if leaf.pblock != 0 {
                 // Load the extent node
-                block_data = self
-                    .block_device
-                    .read_offset(leaf.pblock as usize * BLOCK_SIZE);
+                block_data = self.block_device.read_block(leaf.pblock);
                 // Load the next extent header
-                ExtentNode::from_bytes(&block_data)
+                ExtentNode::from_bytes(&block_data.data)
             } else {
                 // Root node
                 inode_ref.inode.extent()
@@ -83,14 +80,12 @@ impl Ext4 {
         // Leaf is the last element of the path
         let leaf = path.last().unwrap();
         // Note: block data must be defined here to keep it alive
-        let mut block_data: Vec<u8>;
+        let mut block_data: Block;
         let ex_node = if leaf.pblock != 0 {
             // Load the extent node
-            block_data = self
-                .block_device
-                .read_offset(leaf.pblock as usize * BLOCK_SIZE);
+            block_data = self.block_device.read_block(leaf.pblock);
             // Load the next extent header
-            ExtentNodeMut::from_bytes(&mut block_data)
+            ExtentNodeMut::from_bytes(&mut block_data.data)
         } else {
             // Root node
             inode_ref.inode.extent_mut()
@@ -124,14 +119,12 @@ impl Ext4 {
         new_ext: &Ext4Extent,
     ) -> bool {
         // Note: block data must be defined here to keep it alive
-        let mut block_data = Vec::<u8>::new();
+        let mut block_data = Block::default();
         let mut ex_node = if leaf.pblock != 0 {
             // Load the extent node
-            block_data = self
-                .block_device
-                .read_offset(leaf.pblock as usize * BLOCK_SIZE);
+            block_data = self.block_device.read_block(leaf.pblock);
             // Load the next extent header
-            ExtentNodeMut::from_bytes(&mut block_data)
+            ExtentNodeMut::from_bytes(&mut block_data.data)
         } else {
             // Root node
             inode_ref.inode.extent_mut()
@@ -167,9 +160,8 @@ impl Ext4 {
 
         ex_node.print();
         // Write back to disk
-        if !block_data.is_empty() {
-            self.block_device
-                .write_offset(leaf.pblock as usize * BLOCK_SIZE, &block_data);
+        if block_data.block_id != 0 {
+            block_data.sync_to_disk(self.block_device.clone());
         } else {
             self.write_back_inode_without_csum(inode_ref);
         }

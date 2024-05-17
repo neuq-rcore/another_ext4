@@ -8,6 +8,7 @@ use super::BlockDevice;
 use super::Inode;
 use crate::constants::*;
 use crate::prelude::*;
+use crate::AsBytes;
 
 // 结构体表示超级块
 #[repr(C)]
@@ -112,13 +113,7 @@ pub struct Superblock {
     checksum: u32,             // crc32c(superblock)
 }
 
-impl TryFrom<Vec<u8>> for Superblock {
-    type Error = u64;
-    fn try_from(value: Vec<u8>) -> core::result::Result<Self, u64> {
-        let data = &value[..size_of::<Superblock>()];
-        Ok(unsafe { core::ptr::read(data.as_ptr() as *const _) })
-    }
-}
+impl AsBytes for Superblock {}
 
 impl Superblock {
     pub fn first_data_block(&self) -> u32 {
@@ -230,9 +225,8 @@ impl Superblock {
     }
     
     pub fn sync_to_disk(&self, block_device: Arc<dyn BlockDevice>) {
-        let data = unsafe {
-            core::slice::from_raw_parts(self as *const _ as *const u8, size_of::<Superblock>())
-        };
-        block_device.write_offset(BASE_OFFSET, data);
+        let mut block = block_device.read_block(0);
+        block.write_offset_as(BASE_OFFSET, self);
+        block.sync_to_disk(block_device);
     }
 }
