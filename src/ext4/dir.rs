@@ -68,10 +68,7 @@ impl Ext4 {
             // Load the parent block from disk
             let mut block = self.block_device.read_block(fblock);
             // Try inserting the entry to parent block
-            if self
-                .insert_entry_to_old_block(&mut block, child, path)
-                .is_ok()
-            {
+            if self.insert_entry_to_old_block(&mut block, child, path) {
                 return Ok(());
             }
             // Current block has no enough space
@@ -100,7 +97,6 @@ impl Ext4 {
             name,
             inode_mode2file_type(child.inode.mode()),
         );
-
         // Write entry to block
         new_entry.copy_to_byte_slice(&mut dst_blk.data, 0);
 
@@ -118,13 +114,8 @@ impl Ext4 {
     }
 
     /// Try insert a directory entry of child inode into a parent block.
-    /// Return `ENOSPC` if parent block has no enough space.
-    fn insert_entry_to_old_block(
-        &self,
-        dst_blk: &mut Block,
-        child: &InodeRef,
-        name: &str,
-    ) -> Result<()> {
+    /// Return true if the entry is successfully inserted.
+    fn insert_entry_to_old_block(&self, dst_blk: &mut Block, child: &InodeRef, name: &str) -> bool {
         let required_size = DirEntry::required_size(name.len());
         let mut offset = 0;
 
@@ -135,17 +126,15 @@ impl Ext4 {
             // Try splitting dir entry
             // The size that `de` actually uses
             let used_size = de.used_size();
-
             // The rest size
             let free_size = rec_len - used_size;
-
+            
             // Compare size
             if free_size < required_size {
                 // No enough space, try next dir ent
                 offset = offset + rec_len;
                 continue;
             }
-
             // Has enough space
             // Update the old entry
             de.set_rec_len(used_size as u16);
@@ -168,9 +157,9 @@ impl Ext4 {
 
             // Sync to disk
             dst_blk.sync_to_disk(self.block_device.clone());
-            return Ok(());
+            return true;
         }
-        Err(Ext4Error::new(ErrCode::ENOSPC))
+        false
     }
 
     /// Create a new directory. `path` is the absolute path of the new directory.
