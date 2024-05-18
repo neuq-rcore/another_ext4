@@ -5,10 +5,7 @@ use crate::prelude::*;
 
 impl Ext4 {
     /// Allocate a new data block for an inode, return the physical block number
-    pub(super) fn alloc_block(
-        &mut self,
-        inode_ref: &mut InodeRef,
-    ) -> Result<PBlockId> {
+    pub(super) fn alloc_block(&mut self, inode_ref: &mut InodeRef) -> Result<PBlockId> {
         // Calc block group id
         let inodes_per_group = self.super_block.inodes_per_group();
         let bgid = ((inode_ref.id - 1) / inodes_per_group) as BlockGroupId;
@@ -144,7 +141,8 @@ impl Ext4 {
 
             // Modify filesystem counters
             let free_inodes = bg.desc.free_inodes_count() - 1;
-            bg.desc.set_free_inodes_count(&self.super_block, free_inodes);
+            bg.desc
+                .set_free_inodes_count(&self.super_block, free_inodes);
 
             // Increment used directories counter
             if is_dir {

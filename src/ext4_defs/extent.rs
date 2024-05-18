@@ -289,9 +289,8 @@ impl<'a> ExtentNode<'a> {
     /// the given logical block number. Return `Err(index)` if not found, and `index` is the
     /// position where the new extent should be inserted.
     pub fn search_extent(&self, lblock: LBlockId) -> core::result::Result<usize, usize> {
-        let mut i = 0;
         debug!("Search extent: {}", lblock);
-        self.print();
+        let mut i = 0;
         while i < self.header().entries_count as usize {
             let extent = self.extent_at(i);
             if extent.start_lblock() <= lblock {
@@ -317,9 +316,8 @@ impl<'a> ExtentNode<'a> {
     /// Return `Err(index)` if not found, and `index` is the position where the new extent index
     /// should be inserted.
     pub fn search_extent_index(&self, lblock: LBlockId) -> core::result::Result<usize, usize> {
-        let mut i = 0;
         debug!("Search extent index: {}", lblock);
-        self.print();
+        let mut i = 0;
         while i < self.header().entries_count as usize {
             let extent_index = self.extent_index_at(i);
             if extent_index.start_lblock() > lblock {
@@ -500,16 +498,20 @@ impl<'a> ExtentNodeMut<'a> {
         // Split the node, return the extents in the right half
         let mut split = Vec::new();
         let mid = self.header().entries_count() as usize / 2;
+        // If `pos` is on the right side, insert it to `split`
         for i in mid..self.header().entries_count() as usize {
             if i == pos {
-                // The extent to insert
                 split.push((*extent).into());
             }
             split.push(*self.fake_extent_at(i));
         }
+        if pos == self.header().entries_count() as usize {
+            split.push((*extent).into());
+        }
+        // Update header
         self.header_mut().entries_count = mid as u16;
+        // If `pos` is on the left side, insert it
         if pos < mid {
-            // If `pos` is on the left side, insert it
             self.insert_extent(extent, pos).expect("Must Succeed");
         }
         // Return the right half
@@ -544,16 +546,20 @@ impl<'a> ExtentNodeMut<'a> {
         // Split the node, return the extent indexs in the right half
         let mut split = Vec::<FakeExtent>::new();
         let mid = self.header().entries_count() as usize / 2;
+        // If `pos` is on the right side, insert it to `split`
         for i in mid..self.header().entries_count() as usize {
             if i == pos {
-                // The extent index to insert
                 split.push((*extent_index).into());
             }
             split.push(*self.fake_extent_at(i));
         }
+        if pos == self.header().entries_count() as usize {
+            split.push((*extent_index).into());
+        }
+        // Update header
         self.header_mut().entries_count = mid as u16;
+        // If `pos` is on the left side, insert it
         if pos < mid {
-            // If `pos` is on the left side, insert it
             self.insert_extent_index(extent_index, pos)
                 .expect("Must Succeed");
         }

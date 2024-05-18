@@ -92,7 +92,6 @@ impl Ext4 {
     /// Insert a directory entry of a child inode into a new parent block.
     /// A new block must have enough space
     fn insert_entry_to_new_block(&self, dst_blk: &mut Block, child: &InodeRef, name: &str) {
-        debug!("Dir insert entry to new block {}", dst_blk.block_id);
         // Set the entry
         let rec_len = BLOCK_SIZE - size_of::<DirEntryTail>();
         let new_entry = DirEntry::new(
@@ -126,8 +125,6 @@ impl Ext4 {
         child: &InodeRef,
         name: &str,
     ) -> Result<()> {
-        debug!("Dir insert entry to old block {}", dst_blk.block_id);
-
         let required_size = DirEntry::required_size(name.len());
         let mut offset = 0;
 
