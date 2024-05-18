@@ -27,6 +27,7 @@ impl<'a> Bitmap<'a> {
 
     /// Find the first clear bit in the range `[start, end)`
     pub fn first_clear_bit(&self, start: usize, end: usize) -> Option<usize> {
+        let end = core::cmp::min(end, self.0.len() * 8);
         for i in start..end {
             if self.is_bit_clear(i) {
                 return Some(i);

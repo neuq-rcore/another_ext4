@@ -8,10 +8,10 @@ impl Ext4 {
     pub(super) fn alloc_block(
         &mut self,
         inode_ref: &mut InodeRef,
-        goal: PBlockId,
     ) -> Result<PBlockId> {
-        let bgid = (goal / self.super_block.blocks_per_group() as u64) as BlockGroupId;
-        let idx_in_bg = goal % self.super_block.blocks_per_group() as u64;
+        // Calc block group id
+        let inodes_per_group = self.super_block.inodes_per_group();
+        let bgid = ((inode_ref.id - 1) / inodes_per_group) as BlockGroupId;
 
         // Load block group descriptor
         let mut bg = self.read_block_group(bgid);
@@ -23,7 +23,7 @@ impl Ext4 {
 
         // Find the first free block
         let fblock = bitmap
-            .find_and_set_first_clear_bit(idx_in_bg as usize, 8 * BLOCK_SIZE)
+            .find_and_set_first_clear_bit(0, 8 * BLOCK_SIZE)
             .ok_or(Ext4Error::new(ErrCode::ENOSPC))? as PBlockId;
 
         // Set block group checksum
@@ -31,18 +31,18 @@ impl Ext4 {
         self.block_device.write_block(&bitmap_block);
 
         // Update superblock free blocks count
-        let free_blocks = self.super_block.free_blocks_count();
-        self.super_block.set_free_blocks_count(free_blocks); // TODO: why not - 1?
+        let free_blocks = self.super_block.free_blocks_count() - 1;
+        self.super_block.set_free_blocks_count(free_blocks);
         self.super_block.sync_to_disk(self.block_device.clone());
 
         // Update inode blocks (different block size!) count
-        let inode_blocks = inode_ref.inode.blocks_count();
-        inode_ref.inode.set_blocks_count(inode_blocks as u32 + 8); // TODO: why + 8?
+        let inode_blocks = inode_ref.inode.blocks_count() + (BLOCK_SIZE / INODE_BLOCK_SIZE) as u64;
+        inode_ref.inode.set_blocks_count(inode_blocks);
         self.write_inode_with_csum(inode_ref);
 
         // Update block group free blocks count
-        let fb_cnt = bg.desc.get_free_blocks_count();
-        bg.desc.set_free_blocks_count(fb_cnt - 1);
+        let fb_cnt = bg.desc.get_free_blocks_count() - 1;
+        bg.desc.set_free_blocks_count(fb_cnt);
 
         self.write_block_group_with_csum(&mut bg);
 

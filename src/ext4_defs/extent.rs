@@ -56,52 +56,37 @@ impl ExtentHeader {
         unsafe { &*(block_data.as_ptr() as *const ExtentHeader) }
     }
 
-    // 获取extent header的魔数
-    pub fn magic(&self) -> u16 {
-        self.magic
-    }
-
-    // 设置extent header的魔数
-    pub fn set_magic(&mut self) {
-        self.magic = EXT4_EXTENT_MAGIC;
-    }
-
-    // 获取extent header的条目数
+    /// 获取extent header的条目数
     pub fn entries_count(&self) -> u16 {
         self.entries_count
     }
 
-    // 设置extent header的条目数
+    /// 设置extent header的条目数
     pub fn set_entries_count(&mut self, count: u16) {
         self.entries_count = count;
     }
 
-    // 获取extent header的最大条目数
+    /// 获取extent header的最大条目数
     pub fn max_entries_count(&self) -> u16 {
         self.max_entries_count
     }
 
-    // 设置extent header的最大条目数
-    pub fn set_max_entries_count(&mut self, max_count: u16) {
-        self.max_entries_count = max_count;
-    }
-
-    // 获取extent header的深度
+    /// 获取extent header的深度
     pub fn depth(&self) -> u16 {
         self.depth
     }
 
-    // 设置extent header的深度
+    /// 设置extent header的深度
     pub fn set_depth(&mut self, depth: u16) {
         self.depth = depth;
     }
 
-    // 获取extent header的生成号
+    /// 获取extent header的生成号
     pub fn generation(&self) -> u32 {
         self.generation
     }
 
-    // 设置extent header的生成号
+    /// 设置extent header的生成号
     pub fn set_generation(&mut self, generation: u32) {
         self.generation = generation;
     }

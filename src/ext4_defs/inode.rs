@@ -11,7 +11,6 @@ use super::crc::*;
 use super::AsBytes;
 use super::BlockDevice;
 use super::BlockGroupRef;
-use super::ExtentHeader;
 use super::Superblock;
 use super::{ExtentNode, ExtentNodeMut};
 use crate::constants::*;
@@ -157,8 +156,9 @@ impl Inode {
         blocks
     }
 
-    pub fn set_blocks_count(&mut self, blocks_count: u32) {
-        self.blocks = blocks_count;
+    pub fn set_blocks_count(&mut self, blocks_count: u64) {
+        self.blocks = (blocks_count & 0xFFFFFFFF) as u32;
+        self.osd2.l_i_blocks_high = (blocks_count >> 32) as u16;
     }
 
     pub fn set_generation(&mut self, generation: u32) {
@@ -198,12 +198,7 @@ impl Inode {
     /// node of the extent tree
     pub fn extent_init(&mut self) {
         self.set_flags(EXT4_INODE_FLAG_EXTENTS);
-        let header = ExtentHeader::new(0, 4, 0, 0);
-        let header_ptr = &header as *const ExtentHeader as *const u8;
-        let array_ptr = &mut self.block as *mut u8;
-        unsafe {
-            core::ptr::copy_nonoverlapping(header_ptr, array_ptr, size_of::<ExtentHeader>());
-        }
+        self.extent_node_mut().init(0, 0);
     }
 }
 

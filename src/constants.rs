@@ -40,3 +40,4 @@ pub const EXT4_ROOT_INO: InodeId = 2;
 
 pub const BASE_OFFSET: usize = 1024;
 pub const BLOCK_SIZE: usize = 4096;
+pub const INODE_BLOCK_SIZE: usize = 512;

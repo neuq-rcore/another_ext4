@@ -114,7 +114,7 @@ impl Ext4 {
                 // Not found, create a new extent
                 let block_count = min(block_count, EXT_MAX_BLOCKS - iblock);
                 // Allocate physical block
-                let fblock = self.alloc_block(inode_ref, 0)?;
+                let fblock = self.alloc_block(inode_ref)?;
                 // Create a new extent
                 let new_ext = Extent::new(iblock, fblock, block_count as u16);
                 // Insert the new extent
@@ -187,7 +187,7 @@ impl Ext4 {
         child_pos: usize,
         split: &[FakeExtent],
     ) -> core::result::Result<(), Vec<FakeExtent>> {
-        let right_bid = self.alloc_block(inode_ref, 0).unwrap();
+        let right_bid = self.alloc_block(inode_ref).unwrap();
         let mut right_block = self.block_device.read_block(right_bid);
         let mut right_node = ExtentNodeMut::from_bytes(&mut right_block.data);
 
@@ -228,8 +228,8 @@ impl Ext4 {
     /// This function will create a new leaf node to store the split part.
     fn split_root(&mut self, inode_ref: &mut InodeRef, split: &[FakeExtent]) -> Result<()> {
         // Create left and right blocks
-        let l_bid = self.alloc_block(inode_ref, 0)?;
-        let r_bid = self.alloc_block(inode_ref, 0)?;
+        let l_bid = self.alloc_block(inode_ref)?;
+        let r_bid = self.alloc_block(inode_ref)?;
         let mut l_block = self.block_device.read_block(l_bid);
         let mut r_block = self.block_device.read_block(r_bid);
 
