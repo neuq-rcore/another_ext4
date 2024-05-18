@@ -56,7 +56,7 @@ impl Ext4 {
     }
 
     /// Write an inode to block device without checksum
-    fn write_inode_without_csum(&self, inode_ref: &mut InodeRef) {
+    fn write_inode_without_csum(&self, inode_ref: &InodeRef) {
         inode_ref.sync_to_disk_without_csum(self.block_device.clone(), &self.super_block)
     }
 
@@ -73,7 +73,7 @@ impl Ext4 {
 
     /// Write a block group descriptor to block device without checksum
     #[allow(unused)]
-    fn write_block_group_without_csum(&self, bg_ref: &mut BlockGroupRef) {
+    fn write_block_group_without_csum(&self, bg_ref: &BlockGroupRef) {
         bg_ref.sync_to_disk_without_csum(self.block_device.clone(), &self.super_block)
     }
 }

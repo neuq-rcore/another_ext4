@@ -180,14 +180,14 @@ impl Inode {
     /* Extent methods */
 
     /// Get the immutable extent root node
-    pub fn extent(&self) -> ExtentNode {
+    pub fn extent_node(&self) -> ExtentNode {
         ExtentNode::from_bytes(unsafe {
             core::slice::from_raw_parts(self.block.as_ptr() as *const u8, 60)
         })
     }
 
     /// Get the mutable extent root node
-    pub fn extent_mut(&mut self) -> ExtentNodeMut {
+    pub fn extent_node_mut(&mut self) -> ExtentNodeMut {
         ExtentNodeMut::from_bytes(unsafe {
             core::slice::from_raw_parts_mut(self.block.as_mut_ptr() as *mut u8, 60)
         })

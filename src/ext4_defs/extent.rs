@@ -125,6 +125,22 @@ pub struct ExtentIndex {
 }
 
 impl ExtentIndex {
+    /// Create a new extent index with the start logic block number and
+    /// the physical block number of the child node
+    pub fn new(first_block: LBlockId, leaf: PBlockId) -> Self {
+        Self {
+            first_block,
+            leaf_lo: leaf as u32,
+            leaf_hi: (leaf >> 32) as u16,
+            padding: 0,
+        }
+    }
+
+    /// The start logic block number that this extent index covers
+    pub fn start_lblock(&self) -> LBlockId {
+        self.first_block
+    }
+
     /// The physical block number of the extent node that is the next level lower in the tree
     pub fn leaf(&self) -> PBlockId {
         (self.leaf_hi as PBlockId) << 32 | self.leaf_lo as PBlockId
@@ -133,7 +149,7 @@ impl ExtentIndex {
 
 #[derive(Debug, Default, Clone, Copy)]
 #[repr(C)]
-pub struct Ext4Extent {
+pub struct Extent {
     /// First file block number that this extent covers.
     first_block: u32,
 
@@ -152,7 +168,7 @@ pub struct Ext4Extent {
     start_lo: u32,
 }
 
-impl Ext4Extent {
+impl Extent {
     /// Create a new extent with start logic block number, start physical block number, and block count
     pub fn new(start_lblock: LBlockId, start_pblock: PBlockId, block_count: u16) -> Self {
         Self {
@@ -198,22 +214,22 @@ impl Ext4Extent {
         self.block_count = block_count as u16;
     }
 
-    /// Check if the extent is uninitialized
-    pub fn is_uninit(&self) -> bool {
+    /// Check if the extent is unwritten
+    pub fn is_unwritten(&self) -> bool {
         self.block_count > EXT_INIT_MAX_LEN
     }
 
-    /// Mark the extent as uninitialized
-    pub fn mark_uninit(&mut self) {
+    /// Mark the extent as unwritten
+    pub fn mark_unwritten(&mut self) {
         (*self).block_count |= EXT_INIT_MAX_LEN;
     }
 
     /// Check whether the `ex2` extent can be appended to the `ex1` extent
-    pub fn can_append(ex1: &Ext4Extent, ex2: &Ext4Extent) -> bool {
+    pub fn can_append(ex1: &Extent, ex2: &Extent) -> bool {
         if ex1.start_pblock() + ex1.block_count() as u64 != ex2.start_pblock() {
             return false;
         }
-        if ex1.is_uninit()
+        if ex1.is_unwritten()
             && ex1.block_count() + ex2.block_count() > EXT_UNWRITTEN_MAX_LEN as LBlockId
         {
             return false;
@@ -225,6 +241,30 @@ impl Ext4Extent {
             return false;
         }
         return true;
+    }
+}
+
+/// When only `first_block` field in `Extent` and `ExtentIndex` are used, they can
+/// both be interpreted as the common type `FakeExtent`. This provides convenience
+/// to some tree operations.
+#[derive(Debug, Clone, Copy)]
+#[repr(C)]
+pub struct FakeExtent {
+    /// The `first_block` field in `Extent` and `ExtentIndex`
+    first_block: u32,
+    /// Ignored field, should not be accessed
+    protected: [u8; 8],
+}
+
+impl From<Extent> for FakeExtent {
+    fn from(extent: Extent) -> Self {
+        unsafe { mem::transmute(extent) }
+    }
+}
+
+impl From<ExtentIndex> for FakeExtent {
+    fn from(extent_index: ExtentIndex) -> Self {
+        unsafe { mem::transmute(extent_index) }
     }
 }
 
@@ -248,19 +288,14 @@ impl<'a> ExtentNode<'a> {
         unsafe { &*(self.raw_data.as_ptr() as *const ExtentHeader) }
     }
 
-    /// Get a immutable reference to the extent at a given index
-    pub fn extent_at(&self, index: usize) -> &Ext4Extent {
-        unsafe {
-            &*((self.header() as *const ExtentHeader).add(1) as *const Ext4Extent).add(index)
-        }
+    /// Get a immutable reference to the extent at a given position
+    pub fn extent_at(&self, pos: usize) -> &Extent {
+        unsafe { &*((self.header() as *const ExtentHeader).add(1) as *const Extent).add(pos) }
     }
 
-    /// Get a immmutable reference to the extent indexat a given index
-    pub fn extent_index_at(&self, index: usize) -> &ExtentIndex {
-        unsafe {
-            &*((self.header() as *const ExtentHeader).add(1) as *const ExtentIndex)
-                .add(index)
-        }
+    /// Get a immmutable reference to the extent indexat a given position
+    pub fn extent_index_at(&self, pos: usize) -> &ExtentIndex {
+        unsafe { &*((self.header() as *const ExtentHeader).add(1) as *const ExtentIndex).add(pos) }
     }
 
     /// Find the extent that covers the given logical block number.
@@ -268,13 +303,13 @@ impl<'a> ExtentNode<'a> {
     /// Return `Ok(index)` if found, and `eh.extent_at(index)` is the extent that covers
     /// the given logical block number. Return `Err(index)` if not found, and `index` is the
     /// position where the new extent should be inserted.
-    pub fn extent_search(&self, lblock: LBlockId) -> core::result::Result<usize, usize> {
+    pub fn search_extent(&self, lblock: LBlockId) -> core::result::Result<usize, usize> {
         let mut i = 0;
         while i < self.header().entries_count as usize {
             let extent = self.extent_at(i);
             if extent.start_lblock() <= lblock {
                 if extent.start_lblock() + (extent.block_count() as LBlockId) > lblock {
-                    return if extent.is_uninit() { Err(i) } else { Ok(i) };
+                    return if extent.is_unwritten() { Err(i) } else { Ok(i) };
                 }
                 i += 1;
             } else {
@@ -290,7 +325,7 @@ impl<'a> ExtentNode<'a> {
     /// Return `Ok(index)` if found, and `eh.extent_index_at(index)` is the target extent index.
     /// Return `Err(index)` if not found, and `index` is the position where the new extent index
     /// should be inserted.
-    pub fn extent_index_search(&self, lblock: LBlockId) -> core::result::Result<usize, usize> {
+    pub fn search_extent_index(&self, lblock: LBlockId) -> core::result::Result<usize, usize> {
         let mut i = 0;
         self.print();
         while i < self.header().entries_count as usize {
@@ -336,6 +371,13 @@ impl<'a> ExtentNodeMut<'a> {
         Self { raw_data }
     }
 
+    /// Interpret self as immutable extent node
+    pub fn as_immut(&self) -> ExtentNode<'_> {
+        ExtentNode {
+            raw_data: self.raw_data,
+        }
+    }
+
     /// Get a immutable reference to the extent header
     pub fn header(&self) -> &ExtentHeader {
         unsafe { &*(self.raw_data.as_ptr() as *const ExtentHeader) }
@@ -346,84 +388,173 @@ impl<'a> ExtentNodeMut<'a> {
         unsafe { &mut *(self.raw_data.as_mut_ptr() as *mut ExtentHeader) }
     }
 
-    /// Get a immutable reference to the extent at a given index
-    pub fn extent_at(&self, index: usize) -> &'static Ext4Extent {
+    /// Get a immutable reference to the extent at a given position
+    pub fn extent_at(&self, pos: usize) -> &Extent {
+        unsafe { &*((self.header() as *const ExtentHeader).add(1) as *const Extent).add(pos) }
+    }
+
+    /// Get a mutable reference to the extent at a given position
+    pub fn extent_mut_at(&mut self, pos: usize) -> &mut Extent {
+        unsafe { &mut *((self.header_mut() as *mut ExtentHeader).add(1) as *mut Extent).add(pos) }
+    }
+
+    /// Get an immutable reference to the extent pos at a given position
+    pub fn extent_index_at(&self, pos: usize) -> &ExtentIndex {
+        unsafe { &*((self.header() as *const ExtentHeader).add(1) as *const ExtentIndex).add(pos) }
+    }
+
+    /// Get a mutable reference to the extent pos at a given position
+    pub fn extent_index_mut_at(&mut self, pos: usize) -> &mut ExtentIndex {
         unsafe {
-            &*((self.header() as *const ExtentHeader).add(1) as *const Ext4Extent).add(index)
+            &mut *((self.header_mut() as *mut ExtentHeader).add(1) as *mut ExtentIndex).add(pos)
         }
     }
 
-    /// Get a mutable reference to the extent at a given index
-    pub fn extent_mut_at(&mut self, index: usize) -> &'static mut Ext4Extent {
+    /// Get an immutable reference to the extent or extent index at a given position,
+    /// ignore the detailed type information
+    pub fn fake_extent_at(&self, pos: usize) -> &FakeExtent {
+        unsafe { &*((self.header() as *const ExtentHeader).add(1) as *const FakeExtent).add(pos) }
+    }
+
+    /// Get a mutable reference to the extent or extent index at a given position,
+    /// ignore the detailed type information
+    pub fn fake_extent_mut_at(&mut self, pos: usize) -> &mut FakeExtent {
         unsafe {
-            &mut *((self.header_mut() as *mut ExtentHeader).add(1) as *mut Ext4Extent)
-                .add(index)
+            &mut *((self.header_mut() as *mut ExtentHeader).add(1) as *mut FakeExtent).add(pos)
         }
     }
 
-    /// Get a immutable reference to the extent index at a given index
-    pub fn extent_index_at(&self, index: usize) -> &'static ExtentIndex {
-        unsafe {
-            &*((self.header() as *const ExtentHeader).add(1) as *const ExtentIndex)
-                .add(index)
-        }
+    /// Initialize the extent node
+    pub fn init(&mut self, depth: u16, generation: u32) {
+        let max_entries_count =
+            (self.raw_data.len() - size_of::<ExtentHeader>()) / size_of::<Extent>();
+        *self.header_mut() = ExtentHeader::new(0, max_entries_count as u16, depth, generation);
     }
 
-    /// Get a mutable reference to the extent index at a given index
-    pub fn extent_index_mut_at(&mut self, index: usize) -> &'static mut ExtentIndex {
-        unsafe {
-            &mut *((self.header_mut() as *mut ExtentHeader).add(1) as *mut ExtentIndex)
-                .add(index)
+    /// Insert a new extent into current node.
+    ///
+    /// Return `Ok(())` if the insertion is successful. Return `Err(extents)` if
+    /// the insertion failed and `extents` is a vector of split extents, which
+    /// should be inserted into a new node.
+    ///
+    /// This function requires this extent node to be a leaf node.
+    pub fn insert_extent(
+        &mut self,
+        extent: &Extent,
+        pos: usize,
+    ) -> core::result::Result<(), Vec<FakeExtent>> {
+        if self.extent_at(pos).is_unwritten() {
+            // The position has an uninitialized extent
+            *self.extent_mut_at(pos) = *extent;
+            self.header_mut().entries_count += 1;
+            return Ok(());
         }
+        // The position has a valid extent
+        if self.header().entries_count() < self.header().max_entries_count() {
+            // The extent node is not full
+            // Insert the extent and move the following extents
+            let mut i = pos;
+            while i < self.header().entries_count() as usize {
+                *self.extent_mut_at(i + 1) = *self.extent_at(i);
+                i += 1;
+            }
+            *self.extent_mut_at(pos) = *extent;
+            self.header_mut().entries_count += 1;
+            return Ok(());
+        }
+        // The extent node is full
+        // There may be some unwritten extents, we could find the first
+        // unwritten extent and adjust the extents.
+        let mut unwritten = None;
+        for i in 0..self.header().entries_count() as usize {
+            if self.extent_at(i).is_unwritten() {
+                unwritten = Some(i);
+                break;
+            }
+        }
+        if let Some(unwritten) = unwritten {
+            // There is an uninitialized extent, we could adjust the extents.
+            if unwritten < pos {
+                // Move the extents from `unwritten` to `pos`
+                let mut i = unwritten;
+                while i < pos {
+                    *self.extent_mut_at(i) = *self.extent_at(i + 1);
+                    i += 1;
+                }
+            } else {
+                // Move the extents from `pos` to `unwritten`
+                let mut i = pos;
+                while i < unwritten {
+                    *self.extent_mut_at(i + 1) = *self.extent_at(i);
+                    i += 1;
+                }
+            }
+            *self.extent_mut_at(pos) = *extent;
+            self.header_mut().entries_count += 1;
+            return Ok(());
+        }
+        // The extent node is full and all extents are valid
+        // Split the node, return the extents in the right half
+        let mut split = Vec::new();
+        let mid = self.header().entries_count() as usize / 2;
+        for i in mid..self.header().entries_count() as usize {
+            if i == pos {
+                // The extent to insert
+                split.push((*extent).into());
+            }
+            split.push(*self.fake_extent_at(i));
+        }
+        self.header_mut().entries_count = mid as u16;
+        if pos < mid {
+            // If `pos` is on the left side, insert it
+            self.insert_extent(extent, pos).expect("Must Succeed");
+        }
+        // Return the right half
+        Err(split)
     }
 
-    pub fn print(&self) {
-        debug!("Extent header {:?}", self.header());
-        let mut i = 0;
-        while i < self.header().entries_count() as usize {
-            let ext = self.extent_at(i);
-            debug!(
-                "extent[{}] start_lblock={}, start_pblock={}, len={}",
-                i,
-                ext.start_lblock(),
-                ext.start_pblock(),
-                ext.block_count()
-            );
-            i += 1;
+    /// Insert a new extent index into current node.
+    ///
+    /// Return `Ok(())` if the insertion is successful. Return `Err(extent_indexs)` if
+    /// the insertion failed and `extent_indexs` is a vector of split extent indexs,
+    /// which should be inserted into a new node.
+    ///
+    /// This function requires this extent node to be a inner node.
+    pub fn insert_extent_index(
+        &mut self,
+        extent_index: &ExtentIndex,
+        pos: usize,
+    ) -> core::result::Result<(), Vec<FakeExtent>> {
+        if self.header().entries_count() < self.header().max_entries_count() {
+            // The extent node is not full
+            // Insert the extent index and move the following extent indexs
+            let mut i = pos;
+            while i < self.header().entries_count() as usize {
+                *self.extent_index_mut_at(i + 1) = *self.extent_index_at(i);
+                i += 1;
+            }
+            *self.extent_index_mut_at(pos) = *extent_index;
+            self.header_mut().entries_count += 1;
+            return Ok(());
         }
-    }
-}
-
-#[derive(Debug)]
-pub struct ExtentSearchPath {
-    /// Marks whether the extent search path is for an inner node or a leaf node.
-    pub leaf: bool,
-    /// The physical block where this extent node is stored if it is not a root node.
-    /// For a root node, this field is 0.
-    pub pblock: PBlockId,
-    /// Index of the found `ExtentIndex` or `Extent` if found, the position where the
-    /// `ExtentIndex` or `Extent` should be inserted if not found.
-    pub index: core::result::Result<usize, usize>,
-}
-
-impl ExtentSearchPath {
-    /// Create a new extent search path, which records an inner node
-    /// of the extent tree i.e. an `ExtentIndex`.
-    pub fn new_inner(pblock: PBlockId, index: core::result::Result<usize, usize>) -> Self {
-        Self {
-            pblock,
-            leaf: false,
-            index,
+        // The extent node is full
+        // Split the node, return the extent indexs in the right half
+        let mut split = Vec::<FakeExtent>::new();
+        let mid = self.header().entries_count() as usize / 2;
+        for i in mid..self.header().entries_count() as usize {
+            if i == pos {
+                // The extent index to insert
+                split.push((*extent_index).into());
+            }
+            split.push(*self.fake_extent_at(i));
         }
-    }
-
-    /// Create a new extent search path, which records a leaf node
-    /// of the extent tree i.e. an `Extent`.
-    pub fn new_leaf(pblock: PBlockId, index: core::result::Result<usize, usize>) -> Self {
-        Self {
-            pblock,
-            leaf: true,
-            index,
+        self.header_mut().entries_count = mid as u16;
+        if pos < mid {
+            // If `pos` is on the left side, insert it
+            self.insert_extent_index(extent_index, pos)
+                .expect("Must Succeed");
         }
+        // Return the right half
+        Err(split)
     }
 }
