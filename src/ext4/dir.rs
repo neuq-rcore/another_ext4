@@ -6,14 +6,13 @@ use crate::prelude::*;
 impl Ext4 {
     /// Find a directory entry that matches a given name under a parent directory
     pub(super) fn dir_find_entry(&self, parent: &InodeRef, name: &str) -> Result<DirEntry> {
-        info!("Dir find entry: {} under parent {}", name, parent.id);
+        info!("Dir find entry {} under parent {}", name, parent.id);
         let inode_size: u32 = parent.inode.size;
         let total_blocks: u32 = inode_size / BLOCK_SIZE as u32;
         let mut iblock: LBlockId = 0;
 
         while iblock < total_blocks {
             // Get the fs block id
-            debug!("Parent {:?}", parent.inode);
             let fblock = self.extent_get_pblock(parent, iblock)?;
             // Load block from disk
             let block = self.block_device.read_block(fblock);
@@ -29,9 +28,11 @@ impl Ext4 {
 
     /// Find a directory entry that matches a given name in a given block
     fn find_entry_in_block(block: &Block, name: &str) -> Result<DirEntry> {
+        info!("Dir find entry {} in block {}", name, block.block_id);
         let mut offset = 0;
         while offset < BLOCK_SIZE {
             let de = DirEntry::from_bytes(&block.data[offset..]);
+            debug!("Dir entry: {} {:?}", de.rec_len(), de.name());
             offset += de.rec_len() as usize;
             // Unused dir entry
             if de.unused() {
@@ -67,7 +68,12 @@ impl Ext4 {
             // Load the parent block from disk
             let mut block = self.block_device.read_block(fblock);
             // Try inserting the entry to parent block
-            self.insert_entry_to_old_block(&mut block, child, path)?;
+            if self
+                .insert_entry_to_old_block(&mut block, child, path)
+                .is_ok()
+            {
+                return Ok(());
+            }
             // Current block has no enough space
             iblock += 1;
         }
@@ -78,17 +84,15 @@ impl Ext4 {
         // Load new block
         let mut new_block = self.block_device.read_block(fblock);
         // Write the entry to block
-        self.insert_entry_to_new_block(&mut new_block, child, path)
+        self.insert_entry_to_new_block(&mut new_block, child, path);
+
+        Ok(())
     }
 
     /// Insert a directory entry of a child inode into a new parent block.
     /// A new block must have enough space
-    fn insert_entry_to_new_block(
-        &self,
-        dst_blk: &mut Block,
-        child: &InodeRef,
-        name: &str,
-    ) -> Result<()> {
+    fn insert_entry_to_new_block(&self, dst_blk: &mut Block, child: &InodeRef, name: &str) {
+        debug!("Dir insert entry to new block {}", dst_blk.block_id);
         // Set the entry
         let rec_len = BLOCK_SIZE - size_of::<DirEntryTail>();
         let new_entry = DirEntry::new(
@@ -108,11 +112,10 @@ impl Ext4 {
         tail.set_csum(&self.super_block, &new_entry, &dst_blk.data[..]);
         // Copy tail to block
         let tail_offset = BLOCK_SIZE - size_of::<DirEntryTail>();
-        tail.copy_to_byte_slice(&mut dst_blk.data, tail_offset);
+        dst_blk.write_offset_as(tail_offset, &tail);
 
         // Sync block to disk
         dst_blk.sync_to_disk(self.block_device.clone());
-        Ok(())
     }
 
     /// Try insert a directory entry of child inode into a parent block.
@@ -123,6 +126,8 @@ impl Ext4 {
         child: &InodeRef,
         name: &str,
     ) -> Result<()> {
+        debug!("Dir insert entry to old block {}", dst_blk.block_id);
+
         let required_size = DirEntry::required_size(name.len());
         let mut offset = 0;
 
@@ -133,6 +138,7 @@ impl Ext4 {
             // Try splitting dir entry
             // The size that `de` actually uses
             let used_size = de.used_size();
+
             // The rest size
             let free_size = rec_len - used_size;
 
@@ -142,6 +148,7 @@ impl Ext4 {
                 offset = offset + rec_len;
                 continue;
             }
+
             // Has enough space
             // Update the old entry
             de.set_rec_len(used_size as u16);
@@ -156,12 +163,11 @@ impl Ext4 {
             new_entry.copy_to_byte_slice(&mut dst_blk.data, offset + used_size);
 
             // Set tail csum
-            let mut tail =
-                DirEntryTail::from_bytes(&mut dst_blk.data, BLOCK_SIZE).unwrap();
+            let tail_offset = BLOCK_SIZE - size_of::<DirEntryTail>();
+            let mut tail = dst_blk.read_offset_as::<DirEntryTail>(tail_offset);
             tail.set_csum(&self.super_block, &de, &dst_blk.data[offset..]);
             // Write tail to blk_data
-            let tail_offset = BLOCK_SIZE - size_of::<DirEntryTail>();
-            tail.copy_to_byte_slice(&mut dst_blk.data, tail_offset);
+            dst_blk.write_offset_as(tail_offset, &tail);
 
             // Sync to disk
             dst_blk.sync_to_disk(self.block_device.clone());
@@ -174,14 +180,9 @@ impl Ext4 {
     pub fn mkdir(&mut self, path: &str) -> Result<()> {
         // get open flags
         let iflags = OpenFlags::from_str("w").unwrap();
-        self.generic_open(
-            path,
-            iflags,
-            FileType::Directory,
-            &self.read_root_inode(),
-        )
-        .map(|_| {
-            info!("ext4_dir_mk: {} ok", path);
-        })
+        self.generic_open(path, iflags, FileType::Directory, &self.read_root_inode())
+            .map(|_| {
+                info!("ext4_dir_mk: {} ok", path);
+            })
     }
 }

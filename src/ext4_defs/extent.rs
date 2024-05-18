@@ -290,18 +290,24 @@ impl<'a> ExtentNode<'a> {
     /// position where the new extent should be inserted.
     pub fn search_extent(&self, lblock: LBlockId) -> core::result::Result<usize, usize> {
         let mut i = 0;
+        debug!("Search extent: {}", lblock);
+        self.print();
         while i < self.header().entries_count as usize {
             let extent = self.extent_at(i);
             if extent.start_lblock() <= lblock {
                 if extent.start_lblock() + (extent.block_count() as LBlockId) > lblock {
-                    return if extent.is_unwritten() { Err(i) } else { Ok(i) };
+                    let res = if extent.is_unwritten() { Err(i) } else { Ok(i) };
+                    debug!("Search res: {:?}", res);
+                    return res;
                 }
                 i += 1;
             } else {
                 break;
             }
         }
-        Err(i)
+        let res = Err(i);
+        debug!("Search res: {:?}", res);
+        return res;
     }
 
     /// Find the extent index that covers the given logical block number. The extent index
@@ -312,30 +318,42 @@ impl<'a> ExtentNode<'a> {
     /// should be inserted.
     pub fn search_extent_index(&self, lblock: LBlockId) -> core::result::Result<usize, usize> {
         let mut i = 0;
+        debug!("Search extent index: {}", lblock);
         self.print();
         while i < self.header().entries_count as usize {
             let extent_index = self.extent_index_at(i);
-            if extent_index.first_block <= lblock {
-                i += 1;
-            } else {
-                return Ok(i - 1);
+            if extent_index.start_lblock() > lblock {
+                break;
             }
+            i += 1;
         }
-        Err(i)
+        let res = Ok(i - 1);
+        debug!("Search res: {:?}", res);
+        return res;
     }
 
     pub fn print(&self) {
         debug!("Extent header {:?}", self.header());
         let mut i = 0;
         while i < self.header().entries_count() as usize {
-            let ext = self.extent_at(i);
-            debug!(
-                "extent[{}] start_lblock={}, start_pblock={}, len={}",
-                i,
-                ext.start_lblock(),
-                ext.start_pblock(),
-                ext.block_count()
-            );
+            if self.header().depth == 0 {
+                let ext = self.extent_at(i);
+                debug!(
+                    "extent[{}] start_lblock={}, start_pblock={}, len={}",
+                    i,
+                    ext.start_lblock(),
+                    ext.start_pblock(),
+                    ext.block_count()
+                );
+            } else {
+                let ext_idx = self.extent_index_at(i);
+                debug!(
+                    "extent_index[{}] start_lblock={}, leaf={}",
+                    i,
+                    ext_idx.start_lblock(),
+                    ext_idx.leaf()
+                )
+            }
             i += 1;
         }
     }

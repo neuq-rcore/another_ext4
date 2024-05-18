@@ -1,4 +1,5 @@
 use ext4_rs::{Block, BlockDevice, Ext4, BLOCK_SIZE};
+use log::warn;
 use simple_logger::SimpleLogger;
 use std::fs::{File, OpenOptions};
 use std::io::{Read, Seek, SeekFrom, Write};
@@ -28,6 +29,9 @@ impl BlockDevice for BlockFile {
     }
 
     fn write_block(&self, block: &Block) {
+        if block.block_id == 2135 {
+            warn!("!!!!! 2135");
+        }
         let mut file = &self.0;
         let _r = file.seek(SeekFrom::Start(block.block_id * BLOCK_SIZE as u64));
         let _r = file.write_all(&block.data);
@@ -58,32 +62,49 @@ fn open_ext4() -> Ext4 {
 }
 
 fn mkdir_test(ext4: &mut Ext4) {
-    ext4.mkdir("1").expect("mkdir failed");
-    ext4.mkdir("1/2").expect("mkdir failed");
-    ext4.mkdir("1/2/3").expect("mkdir failed");
-    ext4.mkdir("1/2/3/4").expect("mkdir failed");
-    ext4.mkdir("2").expect("mkdir failed");
-    ext4.mkdir("2/3").expect("mkdir failed");
-    ext4.mkdir("2/3/4").expect("mkdir failed");
-    ext4.mkdir("3").expect("mkdir failed");
+    ext4.mkdir("d1").expect("mkdir failed");
+    ext4.mkdir("d1/d2").expect("mkdir failed");
+    ext4.mkdir("d1/d2/d3").expect("mkdir failed");
+    ext4.mkdir("d1/d2/d3/d4").expect("mkdir failed");
+    ext4.mkdir("d2").expect("mkdir failed");
+    ext4.mkdir("d2/d3").expect("mkdir failed");
+    ext4.mkdir("d2/d3/d4").expect("mkdir failed");
+    ext4.mkdir("d3").expect("mkdir failed");
 }
 
 fn open_test(ext4: &mut Ext4) {
-    ext4.open("1/2/3/4/5", "w+", true).expect("open failed");
-    ext4.open("1/2/3/4/5", "r", true).expect("open failed");
-    ext4.open("1/2/3/4/5", "a", true).expect("open failed");
-    ext4.open("2/4", "w+", true).expect("open failed");
+    ext4.open("d1/d2/d3/d4/f1", "w+", true)
+        .expect("open failed");
+    ext4.open("d1/d2/d3/d4/f1", "r", true).expect("open failed");
+    ext4.open("d1/d2/d3/d4/f5", "a", true).expect("open failed");
+    ext4.open("d2/f4", "w+", true).expect("open failed");
+    ext4.open("f1", "w+", true).expect("open failed");
 }
 
 fn read_write_test(ext4: &mut Ext4) {
-    let buffer = "hello world".as_bytes();
-    let mut wfile = ext4.open("1/2/3/4/5", "w+", true).expect("open failed");
-    ext4.write(&mut wfile, buffer).expect("write failed");
-    let mut rfile = ext4.open("1/2/3/4/5", "r", true).expect("open failed");
-    let mut buffer2 = vec![0u8; buffer.len()];
-    ext4.read(&mut rfile, &mut buffer2, buffer.len())
+    let wbuffer = "hello world".as_bytes();
+    let mut wfile = ext4.open("d3/f0", "w+", true).expect("open failed");
+    ext4.write(&mut wfile, wbuffer).expect("write failed");
+
+    let mut rbuffer = vec![0u8; wbuffer.len()];
+    let mut rfile = ext4.open("d3/f0", "r", true).expect("open failed");
+    ext4.read(&mut rfile, &mut rbuffer, wbuffer.len())
         .expect("read failed");
-    assert_eq!(buffer, buffer2);
+
+    assert_eq!(wbuffer, rbuffer);
+}
+
+fn large_read_write_test(ext4: &mut Ext4) {
+    let wbuffer = vec![99u8; 1024 * 1024];
+    let mut wfile = ext4.open("d3/f2", "w+", true).expect("open failed");
+    ext4.write(&mut wfile, &wbuffer).expect("write failed");
+
+    let mut rfile = ext4.open("d3/f2", "r", true).expect("open failed");
+    let mut rbuffer = vec![0u8; wbuffer.len()];
+    ext4.read(&mut rfile, &mut rbuffer, wbuffer.len())
+        .expect("read failed");
+
+    assert_eq!(wbuffer, rbuffer);
 }
 
 fn main() {
@@ -98,4 +119,6 @@ fn main() {
     println!("open test done");
     read_write_test(&mut ext4);
     println!("read write test done");
+    large_read_write_test(&mut ext4);
+    println!("large read write test done");
 }

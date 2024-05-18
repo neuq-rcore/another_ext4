@@ -7,6 +7,7 @@ use super::crc::*;
 use super::Superblock;
 use crate::constants::*;
 use crate::prelude::*;
+use crate::AsBytes;
 use alloc::string::FromUtf8Error;
 
 #[repr(C)]
@@ -38,11 +39,11 @@ impl Default for DirEnInner {
 #[repr(C)]
 #[derive(Debug)]
 pub struct DirEntry {
-    inode: InodeId,        // 该目录项指向的inode的编号
-    rec_len: u16,          // 到下一个目录项的距离
-    name_len: u8,          // 低8位的文件名长度
+    inode: InodeId,    // 该目录项指向的inode的编号
+    rec_len: u16,      // 到下一个目录项的距离
+    name_len: u8,      // 低8位的文件名长度
     inner: DirEnInner, // 联合体成员
-    name: [u8; 255],       // 文件名
+    name: [u8; 255],   // 文件名
 }
 
 impl Default for DirEntry {
@@ -152,7 +153,7 @@ impl DirEntry {
     pub fn copy_to_byte_slice(&self, slice: &mut [u8], offset: usize) {
         let de_ptr = self as *const DirEntry as *const u8;
         let slice_ptr = slice as *mut [u8] as *mut u8;
-        let count = core::mem::size_of::<DirEntry>();
+        let count = self.used_size();
         unsafe {
             core::ptr::copy_nonoverlapping(de_ptr, slice_ptr.add(offset), count);
         }
@@ -169,39 +170,11 @@ pub struct DirEntryTail {
     pub checksum: u32, // crc32c(uuid+inum+dirblock)
 }
 
-impl DirEntryTail {
-    pub fn from_bytes(data: &mut [u8], blocksize: usize) -> Option<Self> {
-        unsafe {
-            let ptr = data as *mut [u8] as *mut u8;
-            let t = *(ptr.add(blocksize - core::mem::size_of::<DirEntryTail>())
-                as *mut DirEntryTail);
-            if t.reserved_zero1 != 0 || t.reserved_zero2 != 0 {
-                log::info!("t.reserved_zero1");
-                return None;
-            }
-            if t.rec_len.to_le() != core::mem::size_of::<DirEntryTail>() as u16 {
-                log::info!("t.rec_len");
-                return None;
-            }
-            if t.reserved_ft != 0xDE {
-                log::info!("t.reserved_ft");
-                return None;
-            }
-            Some(t)
-        }
-    }
+impl AsBytes for DirEntryTail {}
 
+impl DirEntryTail {
     pub fn set_csum(&mut self, s: &Superblock, diren: &DirEntry, blk_data: &[u8]) {
         self.checksum = diren.calc_csum(s, blk_data);
-    }
-
-    pub fn copy_to_byte_slice(&self, slice: &mut [u8], offset: usize) {
-        let de_ptr = self as *const DirEntryTail as *const u8;
-        let slice_ptr = slice as *mut [u8] as *mut u8;
-        let count = core::mem::size_of::<DirEntryTail>();
-        unsafe {
-            core::ptr::copy_nonoverlapping(de_ptr, slice_ptr.add(offset), count);
-        }
     }
 }
 

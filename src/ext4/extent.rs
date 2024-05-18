@@ -49,7 +49,6 @@ impl Ext4 {
         }
         // Leaf
         let index = ex_node.search_extent(iblock);
-        debug!("Extent search {} res {:?}", iblock, index);
         path.push(ExtentSearchStep::new(pblock, index));
 
         path
@@ -256,8 +255,8 @@ impl Ext4 {
         let depth = root.header().depth() + 1;
         root.header_mut().set_depth(depth);
         root.header_mut().set_entries_count(2);
-        *root.extent_index_mut_at(0) = ExtentIndex::new(root.extent_at(0).start_lblock(), l_bid);
-        *root.extent_index_mut_at(1) = ExtentIndex::new(root.extent_at(1).start_lblock(), r_bid);
+        *root.extent_index_mut_at(0) = ExtentIndex::new(left.extent_at(0).start_lblock(), l_bid);
+        *root.extent_index_mut_at(1) = ExtentIndex::new(right.extent_at(0).start_lblock(), r_bid);
 
         // Sync to disk
         l_block.sync_to_disk(self.block_device.clone());

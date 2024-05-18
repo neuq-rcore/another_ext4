@@ -16,11 +16,11 @@ impl Ext4 {
         path: &str,
         flag: OpenFlags,
         ftype: FileType,
-        parent_inode: &InodeRef,
+        root: &InodeRef,
     ) -> Result<File> {
         info!("generic open: {}", path);
         // Search from the given parent inode
-        let mut parent = parent_inode.clone();
+        let mut parent = root.clone();
         let search_path = Self::split_path(path);
 
         for (i, path) in search_path.iter().enumerate() {
@@ -49,10 +49,12 @@ impl Ext4 {
                     // Write back parent and child
                     self.write_inode_with_csum(&mut parent);
                     self.write_inode_with_csum(&mut child);
+                    // Update parent
+                    parent = child;
                 }
             }
         }
-        // Reach the target
+        // `parent` is the target inode
         let mut file = File::default();
         file.inode = parent.id;
         Ok(file)
