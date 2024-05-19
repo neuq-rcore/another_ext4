@@ -497,7 +497,7 @@ impl<'a> ExtentNodeMut<'a> {
         // The extent node is full and all extents are valid
         // Split the node, return the extents in the right half
         let mut split = Vec::new();
-        let mid = self.header().entries_count() as usize / 2;
+        let mid = self.header().entries_count() as usize * 2 / 3;
         // If `pos` is on the right side, insert it to `split`
         for i in mid..self.header().entries_count() as usize {
             if i == pos {
@@ -545,7 +545,7 @@ impl<'a> ExtentNodeMut<'a> {
         // The extent node is full
         // Split the node, return the extent indexs in the right half
         let mut split = Vec::<FakeExtent>::new();
-        let mid = self.header().entries_count() as usize / 2;
+        let mid = self.header().entries_count() as usize * 2 / 3;
         // If `pos` is on the right side, insert it to `split`
         for i in mid..self.header().entries_count() as usize {
             if i == pos {

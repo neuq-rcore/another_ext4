@@ -1,5 +1,4 @@
 use ext4_rs::{Block, BlockDevice, Ext4, BLOCK_SIZE};
-use log::warn;
 use simple_logger::SimpleLogger;
 use std::fs::{File, OpenOptions};
 use std::io::{Read, Seek, SeekFrom, Write};
@@ -29,9 +28,6 @@ impl BlockDevice for BlockFile {
     }
 
     fn write_block(&self, block: &Block) {
-        if block.block_id == 2135 {
-            warn!("!!!!! 2135");
-        }
         let mut file = &self.0;
         let _r = file.seek(SeekFrom::Start(block.block_id * BLOCK_SIZE as u64));
         let _r = file.write_all(&block.data);
@@ -95,7 +91,7 @@ fn read_write_test(ext4: &mut Ext4) {
 }
 
 fn large_read_write_test(ext4: &mut Ext4) {
-    let wbuffer = vec![99u8; 1024 * 1024];
+    let wbuffer = vec![99u8; 1024 * 1024 * 2];
     let mut wfile = ext4.open("d3/f2", "w+", true).expect("open failed");
     ext4.write(&mut wfile, &wbuffer).expect("write failed");
 

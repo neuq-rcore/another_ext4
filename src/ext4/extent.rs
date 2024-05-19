@@ -173,7 +173,7 @@ impl Ext4 {
     }
 
     /// Split an extent node. Given the block id where the parent node is
-    /// stored, and the child position where `parent_node.extent_at(child_pos)`
+    /// stored, and the child position that `parent_node.extent_at(child_pos)`
     /// points to the child.
     ///
     /// The child node has already been split by calling `insert_extent` or
@@ -207,13 +207,13 @@ impl Ext4 {
         if parent_pblock == 0 {
             // Parent is root
             let mut parent_node = inode_ref.inode.extent_node_mut();
-            res = parent_node.insert_extent_index(&extent_index, child_pos);
+            res = parent_node.insert_extent_index(&extent_index, child_pos + 1);
             self.write_inode_without_csum(inode_ref);
         } else {
             // Parent is not root
             let mut parent_block = self.block_device.read_block(parent_pblock);
             let mut parent_node = ExtentNodeMut::from_bytes(&mut parent_block.data);
-            res = parent_node.insert_extent_index(&extent_index, child_pos);
+            res = parent_node.insert_extent_index(&extent_index, child_pos + 1);
             parent_block.sync_to_disk(self.block_device.clone());
         }
         res
