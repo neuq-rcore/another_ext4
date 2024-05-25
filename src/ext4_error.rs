@@ -25,7 +25,7 @@ pub enum ErrCode {
     ENOTEMPTY = 39,  /* Directory not empty */
     ENODATA = 61,    /* No data available */
     ENOTSUP = 95,    /* Not supported */
-    ELINKFIAL = 97,  /* Link failed */
+    ELINKFAIL = 97,  /* Link failed */
     EALLOCFIAL = 98, /* Inode alloc failed */
 }
 

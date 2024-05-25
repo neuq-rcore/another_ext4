@@ -45,7 +45,7 @@ impl Ext4 {
                     }?;
                     // Link the new inode
                     self.link(&mut parent, &mut child, path)
-                        .map_err(|_| Ext4Error::with_message(ErrCode::ELINKFIAL, "link fail"))?;
+                        .map_err(|_| Ext4Error::with_message(ErrCode::ELINKFAIL, "link fail"))?;
                     // Write back parent and child
                     self.write_inode_with_csum(&mut parent);
                     self.write_inode_with_csum(&mut child);
@@ -169,7 +169,9 @@ impl Ext4 {
         Ok(())
     }
 
-    pub fn ext4_file_remove(&self, _path: &str) -> Result<usize> {
-        return_errno_with_message!(ErrCode::ENOTSUP, "not support");
+    pub fn remove_file(&self, path: &str) -> Result<()> {
+        
+        
+        Ok(())
     }
 }

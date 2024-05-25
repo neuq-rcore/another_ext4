@@ -8,7 +8,7 @@ pub trait AsBytes
 where
     Self: Sized,
 {
-    /// Default implementation that interprets the object as a byte array.
+    /// Default implementation that deserializes the object from a byte array.
     fn from_bytes(bytes: &[u8]) -> Self {
         unsafe { core::ptr::read(bytes.as_ptr() as *const Self) }
     }
@@ -41,17 +41,17 @@ impl Block {
         Self { block_id, data }
     }
 
-    /// Read `size` bytes at `offset` from block data
+    /// Read `size` bytes from `offset` in block data
     pub fn read_offset(&self, offset: usize, size: usize) -> &[u8] {
         &self.data[offset..offset + size]
     }
 
-    /// Read `size_of::<T>()` bytes at `offset` from block data and interpret it as `T`
+    /// Read bytes from `offset` in block data and interpret it as `T`
     pub fn read_offset_as<'a, T>(&self, offset: usize) -> T
     where
         T: AsBytes,
     {
-        T::from_bytes(&self.data[offset..offset + size_of::<T>()])
+        T::from_bytes(&self.data[offset..])
     }
 
     /// Write block data to `offset` with `size`

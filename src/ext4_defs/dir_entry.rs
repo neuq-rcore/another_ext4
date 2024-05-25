@@ -58,6 +58,36 @@ impl Default for DirEntry {
     }
 }
 
+/// The actual size of the directory entry is determined by `name_len`.
+/// So we need to implement `AsBytes` methods specifically for `DirEntry`.
+impl AsBytes for DirEntry {
+    fn from_bytes(bytes: &[u8]) -> Self {
+        let fake_entry = FakeDirEntry::from_bytes(bytes);
+        let mut entry = DirEntry {
+            inode: fake_entry.inode,
+            rec_len: fake_entry.rec_len,
+            name_len: fake_entry.name_len,
+            inner: DirEnInner {
+                inode_type: fake_entry.inode_type,
+            },
+            name: [0; 255],
+        };
+        let name_len = entry.name_len as usize;
+        let name_offset = size_of::<FakeDirEntry>();
+        entry.name[..name_len].copy_from_slice(&bytes[name_offset..name_offset + name_len]);
+        entry
+    }
+    fn to_bytes(&self) -> &[u8] {
+        let name_len = self.name_len as usize;
+        unsafe {
+            core::slice::from_raw_parts(
+                self as *const Self as *const u8,
+                size_of::<FakeDirEntry>() + name_len,
+            )
+        }
+    }
+}
+
 impl DirEntry {
     /// Create a new directory entry
     pub fn new(inode: InodeId, rec_len: u16, name: &str, dirent_type: FileType) -> Self {
@@ -73,11 +103,6 @@ impl DirEntry {
             },
             name: name_bytes,
         }
-    }
-
-    /// Load a directory entry from bytes
-    pub fn from_bytes(bytes: &[u8]) -> Self {
-        unsafe { core::ptr::read(bytes.as_ptr() as *const _) }
     }
 
     pub fn name(&self) -> core::result::Result<String, FromUtf8Error> {
@@ -117,12 +142,17 @@ impl DirEntry {
         self.inode == 0
     }
 
+    /// Set a directory entry as unused
+    pub fn set_unused(&mut self) {
+        self.inode = 0
+    }
+
     /// Set the dir entry's inode type given the corresponding inode mode
     pub fn set_entry_type(&mut self, inode_mode: u16) {
         self.inner.inode_type = inode_mode2file_type(inode_mode);
     }
 
-    /// Get the required size to save this directory entry, 4-byte aligned
+    /// Get the required size to save a directory entry, 4-byte aligned
     pub fn required_size(name_len: usize) -> usize {
         // u32 + u16 + u8 + Ext4DirEnInner + name -> align to 4
         (core::mem::size_of::<FakeDirEntry>() + name_len + 3) / 4 * 4
@@ -149,15 +179,6 @@ impl DirEntry {
         csum = ext4_crc32c(csum, &data[..], 0xff4);
         csum
     }
-
-    pub fn copy_to_byte_slice(&self, slice: &mut [u8], offset: usize) {
-        let de_ptr = self as *const DirEntry as *const u8;
-        let slice_ptr = slice as *mut [u8] as *mut u8;
-        let count = self.used_size();
-        unsafe {
-            core::ptr::copy_nonoverlapping(de_ptr, slice_ptr.add(offset), count);
-        }
-    }
 }
 
 #[repr(C)]
@@ -182,10 +203,12 @@ impl DirEntryTail {
 #[repr(C)]
 pub struct FakeDirEntry {
     inode: u32,
-    entry_length: u16,
-    name_length: u8,
-    inode_type: u8,
+    rec_len: u16,
+    name_len: u8,
+    inode_type: FileType,
 }
+
+impl AsBytes for FakeDirEntry {}
 
 #[derive(PartialEq, Eq, Clone, Copy, Debug)]
 #[repr(u8)]
