@@ -85,7 +85,8 @@ impl Ext4 {
             // Load the block from disk
             let mut block = self.read_block(fblock);
             // Try removing the entry
-            if let Ok(inode) = self.remove_entry_from_block(&mut block, name) {
+            if let Ok(inode) = Self::remove_entry_from_block(&mut block, name) {
+                self.write_block(&block);
                 return Ok(inode);
             }
             // Current block has no enough space
@@ -103,26 +104,28 @@ impl Ext4 {
         while offset < BLOCK_SIZE {
             let de: DirEntry = block.read_offset_as(offset);
             debug!("Dir entry: {} {:?}", de.rec_len(), de.name());
-            offset += de.rec_len() as usize;
             if !de.unused() && de.compare_name(name) {
                 return Ok(de);
             }
+            offset += de.rec_len() as usize;
         }
         Err(Ext4Error::new(ErrCode::ENOENT))
     }
 
     /// Remove a directory entry that matches a given name from a given block
-    fn remove_entry_from_block(&self, block: &mut Block, name: &str) -> Result<InodeId> {
+    fn remove_entry_from_block(block: &mut Block, name: &str) -> Result<InodeId> {
         info!("Dir remove entry {} from block {}", name, block.block_id);
         let mut offset = 0;
         while offset < BLOCK_SIZE {
             let mut de: DirEntry = block.read_offset_as(offset);
-            offset += de.rec_len() as usize;
             if !de.unused() && de.compare_name(name) {
+                let inode = de.inode();
                 // Mark the target entry as unused
                 de.set_unused();
-                return Ok(de.inode());
+                block.write_offset_as(offset, &de);
+                return Ok(inode);
             }
+            offset += de.rec_len() as usize;
         }
         Err(Ext4Error::new(ErrCode::ENOENT))
     }

@@ -2,6 +2,7 @@ use super::MountPoint;
 use crate::prelude::*;
 
 /// 文件描述符
+#[derive(Debug)]
 pub struct File {
     /// 挂载点句柄
     pub mp: MountPoint,

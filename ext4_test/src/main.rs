@@ -39,7 +39,6 @@ impl BlockDevice for BlockFile {
 
 fn logger_init() {
     SimpleLogger::new().init().unwrap();
-    log::set_max_level(log::LevelFilter::Debug);
 }
 
 fn make_ext4() {
@@ -95,10 +94,10 @@ fn read_write_test(ext4: &mut Ext4) {
 
 fn large_read_write_test(ext4: &mut Ext4) {
     let wbuffer = vec![99u8; 1024 * 1024 * 16];
-    let mut wfile = ext4.open("d3/f2", "w+", true).expect("open failed");
+    let mut wfile = ext4.open("d3/f1", "w+", true).expect("open failed");
     ext4.write(&mut wfile, &wbuffer).expect("write failed");
 
-    let mut rfile = ext4.open("d3/f2", "r", true).expect("open failed");
+    let mut rfile = ext4.open("d3/f1", "r", true).expect("open failed");
     let mut rbuffer = vec![0u8; wbuffer.len()];
     ext4.read(&mut rfile, &mut rbuffer, wbuffer.len())
         .expect("read failed");
@@ -106,8 +105,18 @@ fn large_read_write_test(ext4: &mut Ext4) {
     assert_eq!(wbuffer, rbuffer);
 }
 
+fn remove_file_test(ext4: &mut Ext4) {
+    ext4.remove_file("d3/f0").expect("remove file failed");
+    ext4.open("d3/f0", "r", true).expect_err("open failed");
+    ext4.remove_file("d3/f1").expect("remove file failed");
+    ext4.open("d3/f1", "r", true).expect_err("open failed");
+    ext4.remove_file("f1").expect("remove file failed");
+    ext4.open("f1", "r", true).expect_err("open failed");
+}
+
 fn main() {
     logger_init();
+    log::set_max_level(log::LevelFilter::Off);
     make_ext4();
     println!("ext4.img created");
     let mut ext4 = open_ext4();
@@ -120,4 +129,7 @@ fn main() {
     println!("read write test done");
     large_read_write_test(&mut ext4);
     println!("large read write test done");
+    log::set_max_level(log::LevelFilter::Debug);
+    remove_file_test(&mut ext4);
+    println!("remove file test done");
 }
