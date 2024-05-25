@@ -189,33 +189,40 @@ impl Ext4 {
         let right_bid = self.alloc_block(inode_ref).unwrap();
         let mut right_block = self.block_device.read_block(right_bid);
         let mut right_node = ExtentNodeMut::from_bytes(&mut right_block.data);
-
+        
         // Insert the split half to right node
         right_node.init(0, 0);
-        for (i, extent) in split.iter().enumerate() {
-            *right_node.fake_extent_mut_at(i) = *extent;
+        for (i, fake_extent) in split.iter().enumerate() {
+            *right_node.fake_extent_mut_at(i) = *fake_extent;
         }
         right_node
             .header_mut()
             .set_entries_count(split.len() as u16);
-        // Create an extent index
+        // Create an extent index pointing to the right node
         let extent_index =
             ExtentIndex::new(right_node.extent_index_at(0).start_lblock(), right_bid);
-        right_block.sync_to_disk(self.block_device.clone());
 
         let res;
+        let parent_depth;
         if parent_pblock == 0 {
             // Parent is root
             let mut parent_node = inode_ref.inode.extent_node_mut();
+            parent_depth = parent_node.header().depth();
             res = parent_node.insert_extent_index(&extent_index, child_pos + 1);
             self.write_inode_without_csum(inode_ref);
         } else {
             // Parent is not root
             let mut parent_block = self.block_device.read_block(parent_pblock);
             let mut parent_node = ExtentNodeMut::from_bytes(&mut parent_block.data);
+            parent_depth = parent_node.header().depth();
             res = parent_node.insert_extent_index(&extent_index, child_pos + 1);
             parent_block.sync_to_disk(self.block_device.clone());
         }
+
+        // Right node is the child of parent, so its depth is 1 less than parent
+        right_node.header_mut().set_depth(parent_depth - 1);
+        right_block.sync_to_disk(self.block_device.clone());
+
         res
     }
 
@@ -232,20 +239,21 @@ impl Ext4 {
         let mut l_block = self.block_device.read_block(l_bid);
         let mut r_block = self.block_device.read_block(r_bid);
 
-        // Load root, left, right
+        // Load root, left, right nodes
         let mut root = inode_ref.inode.extent_node_mut();
         let mut left = ExtentNodeMut::from_bytes(&mut l_block.data);
         let mut right = ExtentNodeMut::from_bytes(&mut r_block.data);
 
-        // Copy the left half to left_node
-        left.init(0, 0);
+        // Copy the left half to left node
+        left.init(root.header().depth(), 0);
         for i in 0..root.header().entries_count() as usize {
             *left.fake_extent_mut_at(i) = *root.fake_extent_at(i);
         }
         left.header_mut()
             .set_entries_count(root.header().entries_count());
-        // Copy the right half to right_node
-        right.init(0, 0);
+
+        // Copy the right half to right node
+        right.init(root.header().depth(), 0);
         for (i, fake_extent) in split.iter().enumerate() {
             *right.fake_extent_mut_at(i) = *fake_extent;
         }
