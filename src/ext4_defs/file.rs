@@ -4,7 +4,7 @@ use crate::prelude::*;
 /// 文件描述符
 pub struct File {
     /// 挂载点句柄
-    pub mp: *mut MountPoint,
+    pub mp: MountPoint,
     /// 文件 inode id
     pub inode: InodeId,
     /// 打开标志
@@ -15,19 +15,20 @@ pub struct File {
     pub fpos: usize,
 }
 
-impl Default for File {
-    fn default() -> Self {
-        Self {
-            mp: ptr::null_mut(),
-            inode: 0,
-            flags: 0,
-            fsize: 0,
+impl File {
+    pub fn new(mp: MountPoint, inode: InodeId, flags: u32, fsize: u64) -> Self {
+        File {
+            mp,
+            inode,
+            flags,
+            fsize,
             fpos: 0,
         }
     }
 }
 
 bitflags! {
+    #[derive(Debug, Clone, Copy)]
     pub struct OpenFlags: u32 {
         const O_ACCMODE = 0o0003;
         const O_RDONLY = 0o00;

@@ -22,38 +22,6 @@ impl ExtentSearchStep {
 }
 
 impl Ext4 {
-    /// Find the given logic block id in the extent tree, return the search path
-    fn find_extent(&self, inode_ref: &InodeRef, iblock: LBlockId) -> Vec<ExtentSearchStep> {
-        let mut path: Vec<ExtentSearchStep> = Vec::new();
-        let mut ex_node = inode_ref.inode.extent_node();
-        let mut pblock = 0;
-        let mut block_data: Block;
-
-        // Go until leaf
-        while ex_node.header().depth() > 0 {
-            let index = ex_node.search_extent_index(iblock);
-            if index.is_err() {
-                // TODO: no extent index
-                panic!("Unhandled error");
-            }
-            path.push(ExtentSearchStep::new(pblock, index));
-            // Get the target extent index
-            let ex_idx = ex_node.extent_index_at(index.unwrap());
-            // Load the next extent node
-            let next = ex_idx.leaf();
-            // Note: block data cannot be released until the next assigment
-            block_data = self.block_device.read_block(next);
-            // Load the next extent header
-            ex_node = ExtentNode::from_bytes(&block_data.data);
-            pblock = next;
-        }
-        // Leaf
-        let index = ex_node.search_extent(iblock);
-        path.push(ExtentSearchStep::new(pblock, index));
-
-        path
-    }
-
     /// Given a logic block id, find the corresponding fs block id.
     /// Return 0 if not found.
     pub(super) fn extent_get_pblock(
@@ -123,6 +91,70 @@ impl Ext4 {
         }
     }
 
+    /// Get all the physical blocks that the extent tree covers, including
+    /// the blocks allocated to save the extent tree itself.
+    pub(super) fn extent_get_all_pblocks(&self, inode_ref: &InodeRef) -> Result<Vec<PBlockId>> {
+        let mut pblocks = Vec::new();
+        let ex_node = inode_ref.inode.extent_node();
+        self.get_all_pblocks_recursive(&ex_node, &mut pblocks);
+        Ok(pblocks)
+    }
+
+    /// Get all the physical blocks that an extent node covers recursively,
+    /// including the blocks allocated to save the extent tree itself.
+    fn get_all_pblocks_recursive(&self, ex_node: &ExtentNode, pblocks: &mut Vec<PBlockId>) {
+        if ex_node.header().depth() == 0 {
+            // Leaf
+            for i in 0..ex_node.header().entries_count() as usize {
+                let ex = ex_node.extent_at(i);
+                for j in 0..ex.block_count() {
+                    pblocks.push(ex.start_pblock() + j as PBlockId);
+                }
+            }
+        } else {
+            // Non-leaf
+            for i in 0..ex_node.header().entries_count() as usize {
+                let ex_idx = ex_node.extent_index_at(i);
+                pblocks.push(ex_idx.leaf());
+                let child_block = self.block_device.read_block(ex_idx.leaf());
+                let child_node = ExtentNode::from_bytes(&child_block.data);
+                self.get_all_pblocks_recursive(&child_node, pblocks);
+            }
+        }
+    }
+
+    /// Find the given logic block id in the extent tree, return the search path
+    fn find_extent(&self, inode_ref: &InodeRef, iblock: LBlockId) -> Vec<ExtentSearchStep> {
+        let mut path: Vec<ExtentSearchStep> = Vec::new();
+        let mut ex_node = inode_ref.inode.extent_node();
+        let mut pblock = 0;
+        let mut block_data: Block;
+
+        // Go until leaf
+        while ex_node.header().depth() > 0 {
+            let index = ex_node.search_extent_index(iblock);
+            if index.is_err() {
+                // TODO: no extent index
+                panic!("Unhandled error");
+            }
+            path.push(ExtentSearchStep::new(pblock, index));
+            // Get the target extent index
+            let ex_idx = ex_node.extent_index_at(index.unwrap());
+            // Load the next extent node
+            let next = ex_idx.leaf();
+            // Note: block data cannot be released until the next assigment
+            block_data = self.block_device.read_block(next);
+            // Load the next extent header
+            ex_node = ExtentNode::from_bytes(&block_data.data);
+            pblock = next;
+        }
+        // Leaf
+        let index = ex_node.search_extent(iblock);
+        path.push(ExtentSearchStep::new(pblock, index));
+
+        path
+    }
+
     /// Insert a new extent into the extent tree.
     fn insert_extent(
         &mut self,
@@ -189,7 +221,7 @@ impl Ext4 {
         let right_bid = self.alloc_block(inode_ref).unwrap();
         let mut right_block = self.block_device.read_block(right_bid);
         let mut right_node = ExtentNodeMut::from_bytes(&mut right_block.data);
-        
+
         // Insert the split half to right node
         right_node.init(0, 0);
         for (i, fake_extent) in split.iter().enumerate() {

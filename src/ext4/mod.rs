@@ -35,7 +35,7 @@ impl Ext4 {
             mount_point,
         };
         // Create root directory
-        ext4.alloc_root_inode()?;
+        ext4.create_root_inode()?;
         Ok(ext4)
     }
 
@@ -61,7 +61,7 @@ impl Ext4 {
     }
 
     /// Read a block group descriptor from block device, return an `BlockGroupRef`
-    /// that combines the inode and its id.
+    /// that combines the block group descriptor and its id.
     fn read_block_group(&self, block_group_id: BlockGroupId) -> BlockGroupRef {
         BlockGroupRef::load_from_disk(self.block_device.clone(), &self.super_block, block_group_id)
     }

@@ -123,7 +123,7 @@ impl Inode {
         self.gid = gid;
     }
 
-    pub fn size(&mut self) -> u64 {
+    pub fn size(&self) -> u64 {
         self.size as u64 | ((self.size_hi as u64) << 32)
     }
 

@@ -31,11 +31,11 @@ impl Ext4 {
         &mut self,
         parent: &mut InodeRef,
         child: &InodeRef,
-        path: &str,
+        name: &str,
     ) -> Result<()> {
         info!(
             "Dir add entry: parent {}, child {}, path {}",
-            parent.id, child.id, path
+            parent.id, child.id, name
         );
         let inode_size = parent.inode.size();
         let total_blocks = inode_size as u32 / BLOCK_SIZE as u32;
@@ -48,7 +48,7 @@ impl Ext4 {
             // Load the parent block from disk
             let mut block = self.block_device.read_block(fblock);
             // Try inserting the entry to parent block
-            if self.insert_entry_to_old_block(&mut block, child, path) {
+            if self.insert_entry_to_old_block(&mut block, child, name) {
                 return Ok(());
             }
             // Current block has no enough space
@@ -61,14 +61,19 @@ impl Ext4 {
         // Load new block
         let mut new_block = self.block_device.read_block(fblock);
         // Write the entry to block
-        self.insert_entry_to_new_block(&mut new_block, child, path);
+        self.insert_entry_to_new_block(&mut new_block, child, name);
 
         Ok(())
     }
 
-    /// Remove a entry from a directory
-    pub(super) fn dir_remove_entry(&mut self, parent: &mut InodeRef, path: &str) -> Result<()> {
-        info!("Dir remove entry: parent {}, path {}", parent.id, path);
+    /// Remove a entry from a directory, return the inode id that
+    /// the removed entry points to.
+    pub(super) fn dir_remove_entry(
+        &mut self,
+        parent: &mut InodeRef,
+        name: &str,
+    ) -> Result<InodeId> {
+        info!("Dir remove entry: parent {}, path {}", parent.id, name);
         let inode_size = parent.inode.size();
         let total_blocks = inode_size as u32 / BLOCK_SIZE as u32;
 
@@ -80,8 +85,8 @@ impl Ext4 {
             // Load the block from disk
             let mut block = self.block_device.read_block(fblock);
             // Try removing the entry
-            if self.remove_entry_from_block(&mut block, path) {
-                return Ok(());
+            if let Ok(inode) = self.remove_entry_from_block(&mut block, name) {
+                return Ok(inode);
             }
             // Current block has no enough space
             iblock += 1;
@@ -107,7 +112,7 @@ impl Ext4 {
     }
 
     /// Remove a directory entry that matches a given name from a given block
-    fn remove_entry_from_block(&self, block: &mut Block, name: &str) -> bool {
+    fn remove_entry_from_block(&self, block: &mut Block, name: &str) -> Result<InodeId> {
         info!("Dir remove entry {} from block {}", name, block.block_id);
         let mut offset = 0;
         while offset < BLOCK_SIZE {
@@ -116,10 +121,10 @@ impl Ext4 {
             if !de.unused() && de.compare_name(name) {
                 // Mark the target entry as unused
                 de.set_unused();
-                return true;
+                return Ok(de.inode());
             }
         }
-        false
+        Err(Ext4Error::new(ErrCode::ENOENT))
     }
 
     /// Insert a directory entry of a child inode into a new parent block.
@@ -200,9 +205,8 @@ impl Ext4 {
 
     /// Create a new directory. `path` is the absolute path of the new directory.
     pub fn mkdir(&mut self, path: &str) -> Result<()> {
-        // get open flags
-        let iflags = OpenFlags::from_str("w").unwrap();
-        self.generic_open(path, iflags, FileType::Directory, &self.read_root_inode())
+        let open_flags = OpenFlags::from_str("w").unwrap();
+        self.generic_open(EXT4_ROOT_INO, path, FileType::Directory, open_flags)
             .map(|_| {
                 info!("ext4_dir_mk: {} ok", path);
             })
