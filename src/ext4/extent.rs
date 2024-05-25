@@ -37,7 +37,7 @@ impl Ext4 {
             let block_data: Block;
             let ex_node = if leaf.pblock != 0 {
                 // Load the extent node
-                block_data = self.block_device.read_block(leaf.pblock);
+                block_data = self.read_block(leaf.pblock);
                 // Load the next extent header
                 ExtentNode::from_bytes(&block_data.data)
             } else {
@@ -65,7 +65,7 @@ impl Ext4 {
         // Note: block data must be defined here to keep it alive
         let mut block_data: Block;
         let ex_node = if leaf.pblock != 0 {
-            block_data = self.block_device.read_block(leaf.pblock);
+            block_data = self.read_block(leaf.pblock);
             ExtentNodeMut::from_bytes(&mut block_data.data)
         } else {
             // Root node
@@ -116,7 +116,7 @@ impl Ext4 {
             for i in 0..ex_node.header().entries_count() as usize {
                 let ex_idx = ex_node.extent_index_at(i);
                 pblocks.push(ex_idx.leaf());
-                let child_block = self.block_device.read_block(ex_idx.leaf());
+                let child_block = self.read_block(ex_idx.leaf());
                 let child_node = ExtentNode::from_bytes(&child_block.data);
                 self.get_all_pblocks_recursive(&child_node, pblocks);
             }
@@ -143,7 +143,7 @@ impl Ext4 {
             // Load the next extent node
             let next = ex_idx.leaf();
             // Note: block data cannot be released until the next assigment
-            block_data = self.block_device.read_block(next);
+            block_data = self.read_block(next);
             // Load the next extent header
             ex_node = ExtentNode::from_bytes(&block_data.data);
             pblock = next;
@@ -177,11 +177,11 @@ impl Ext4 {
             };
         }
         // 2. Leaf is not root, load the leaf node
-        let mut leaf_block = self.block_device.read_block(leaf.pblock);
+        let mut leaf_block = self.read_block(leaf.pblock);
         let mut leaf_node = ExtentNodeMut::from_bytes(&mut leaf_block.data);
         // Insert the extent
         let res = leaf_node.insert_extent(new_ext, leaf.index.unwrap_err());
-        leaf_block.sync_to_disk(self.block_device.clone());
+        self.write_block(&leaf_block);
         // Handle split
         if let Err(mut split) = res {
             // Handle split until root
@@ -219,7 +219,7 @@ impl Ext4 {
         split: &[FakeExtent],
     ) -> core::result::Result<(), Vec<FakeExtent>> {
         let right_bid = self.alloc_block(inode_ref).unwrap();
-        let mut right_block = self.block_device.read_block(right_bid);
+        let mut right_block = self.read_block(right_bid);
         let mut right_node = ExtentNodeMut::from_bytes(&mut right_block.data);
 
         // Insert the split half to right node
@@ -244,16 +244,16 @@ impl Ext4 {
             self.write_inode_without_csum(inode_ref);
         } else {
             // Parent is not root
-            let mut parent_block = self.block_device.read_block(parent_pblock);
+            let mut parent_block = self.read_block(parent_pblock);
             let mut parent_node = ExtentNodeMut::from_bytes(&mut parent_block.data);
             parent_depth = parent_node.header().depth();
             res = parent_node.insert_extent_index(&extent_index, child_pos + 1);
-            parent_block.sync_to_disk(self.block_device.clone());
+            self.write_block(&parent_block);
         }
 
         // Right node is the child of parent, so its depth is 1 less than parent
         right_node.header_mut().set_depth(parent_depth - 1);
-        right_block.sync_to_disk(self.block_device.clone());
+        self.write_block(&right_block);
 
         res
     }
@@ -268,8 +268,8 @@ impl Ext4 {
         // Create left and right blocks
         let l_bid = self.alloc_block(inode_ref)?;
         let r_bid = self.alloc_block(inode_ref)?;
-        let mut l_block = self.block_device.read_block(l_bid);
-        let mut r_block = self.block_device.read_block(r_bid);
+        let mut l_block = self.read_block(l_bid);
+        let mut r_block = self.read_block(r_bid);
 
         // Load root, left, right nodes
         let mut root = inode_ref.inode.extent_node_mut();
@@ -299,8 +299,8 @@ impl Ext4 {
         *root.extent_index_mut_at(1) = ExtentIndex::new(right.extent_at(0).start_lblock(), r_bid);
 
         // Sync to disk
-        l_block.sync_to_disk(self.block_device.clone());
-        r_block.sync_to_disk(self.block_device.clone());
+        self.write_block(&l_block);
+        self.write_block(&r_block);
         self.write_inode_without_csum(inode_ref);
 
         Ok(())

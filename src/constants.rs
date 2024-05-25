@@ -1,7 +1,6 @@
 #![allow(unused)]
 
 use crate::prelude::*;
-use bitflags::bitflags;
 
 pub const EXT4_INODE_FLAG_EXTENTS: u32 = 0x00080000; /* Inode uses extents */
 pub const EXT4_MIN_BLOCK_GROUP_DESCRIPTOR_SIZE: u16 = 32;

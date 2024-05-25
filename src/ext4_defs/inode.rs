@@ -11,7 +11,7 @@ use super::crc::*;
 use super::AsBytes;
 use super::BlockDevice;
 use super::BlockGroupRef;
-use super::Superblock;
+use super::SuperBlock;
 use super::{ExtentNode, ExtentNodeMut};
 use crate::constants::*;
 use crate::prelude::*;
@@ -89,7 +89,7 @@ impl Inode {
         self.mode |= mode;
     }
 
-    pub fn inode_type(&self, super_block: &Superblock) -> u32 {
+    pub fn inode_type(&self, super_block: &SuperBlock) -> u32 {
         let mut v = self.mode;
 
         if super_block.creator_os() == EXT4_SUPERBLOCK_OS_HURD {
@@ -99,11 +99,11 @@ impl Inode {
         (v & EXT4_INODE_MODE_TYPE_MASK) as u32
     }
 
-    pub fn is_dir(&self, super_block: &Superblock) -> bool {
+    pub fn is_dir(&self, super_block: &SuperBlock) -> bool {
         self.inode_type(super_block) == EXT4_INODE_MODE_DIRECTORY as u32
     }
 
-    pub fn is_softlink(&self, super_block: &Superblock) -> bool {
+    pub fn is_softlink(&self, super_block: &SuperBlock) -> bool {
         self.inode_type(super_block) == EXT4_INODE_MODE_SOFTLINK as u32
     }
 
@@ -215,16 +215,36 @@ impl InodeRef {
     }
 
     pub fn load_from_disk(
-        block_device: Arc<dyn BlockDevice>,
-        super_block: &Superblock,
+        block_device: &dyn BlockDevice,
+        super_block: &SuperBlock,
         id: InodeId,
     ) -> Self {
-        let (block_id, offset) = Self::disk_pos(super_block, block_device.clone(), id);
+        let (block_id, offset) = Self::disk_pos(super_block, block_device, id);
         let block = block_device.read_block(block_id);
         Self {
             id,
             inode: Inode::from_bytes(block.read_offset(offset, size_of::<Inode>())),
         }
+    }
+
+    pub fn sync_to_disk_without_csum(
+        &self,
+        block_device: &dyn BlockDevice,
+        super_block: &SuperBlock,
+    ) {
+        let (block_id, offset) = Self::disk_pos(super_block, block_device, self.id);
+        let mut block = block_device.read_block(block_id);
+        block.write_offset_as(offset, &self.inode);
+        block_device.write_block(&block)
+    }
+
+    pub fn sync_to_disk_with_csum(
+        &mut self,
+        block_device: &dyn BlockDevice,
+        super_block: &SuperBlock,
+    ) {
+        self.set_checksum(super_block);
+        self.sync_to_disk_without_csum(block_device, super_block);
     }
 
     /// Find the position of an inode in the block device. Return the
@@ -240,8 +260,8 @@ impl InodeRef {
     /// To get the byte address within the inode table, use
     /// `offset = index * sb.inode_size`.
     fn disk_pos(
-        super_block: &Superblock,
-        block_device: Arc<dyn BlockDevice>,
+        super_block: &SuperBlock,
+        block_device: &dyn BlockDevice,
         inode_id: InodeId,
     ) -> (PBlockId, usize) {
         let inodes_per_group = super_block.inodes_per_group();
@@ -256,27 +276,7 @@ impl InodeRef {
         (block_id, offset)
     }
 
-    pub fn sync_to_disk_without_csum(
-        &self,
-        block_device: Arc<dyn BlockDevice>,
-        super_block: &Superblock,
-    ) {
-        let (block_id, offset) = Self::disk_pos(super_block, block_device.clone(), self.id);
-        let mut block = block_device.read_block(block_id);
-        block.write_offset_as(offset, &self.inode);
-        block.sync_to_disk(block_device);
-    }
-
-    pub fn sync_to_disk_with_csum(
-        &mut self,
-        block_device: Arc<dyn BlockDevice>,
-        super_block: &Superblock,
-    ) {
-        self.set_checksum(super_block);
-        self.sync_to_disk_without_csum(block_device, super_block);
-    }
-
-    pub fn set_checksum(&mut self, super_block: &Superblock) {
+    fn set_checksum(&mut self, super_block: &SuperBlock) {
         let inode_size = super_block.inode_size();
 
         let ino_index = self.id as u32;

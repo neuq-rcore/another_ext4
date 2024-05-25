@@ -66,11 +66,6 @@ impl Block {
     {
         self.write_offset(offset, value.to_bytes());
     }
-
-    /// Write block to disk
-    pub fn sync_to_disk(&self, block_device: Arc<dyn BlockDevice>) {
-        block_device.write_block(self);
-    }
 }
 
 /// Common interface for block devices

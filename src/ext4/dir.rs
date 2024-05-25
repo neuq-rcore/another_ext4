@@ -15,7 +15,7 @@ impl Ext4 {
             // Get the fs block id
             let fblock = self.extent_get_pblock(parent, iblock)?;
             // Load block from disk
-            let block = self.block_device.read_block(fblock);
+            let block = self.read_block(fblock);
             // Find the entry in block
             let res = Self::find_entry_in_block(&block, name);
             if let Ok(r) = res {
@@ -46,7 +46,7 @@ impl Ext4 {
             // Get the parent physical block id
             let fblock = self.extent_get_pblock(parent, iblock)?;
             // Load the parent block from disk
-            let mut block = self.block_device.read_block(fblock);
+            let mut block = self.read_block(fblock);
             // Try inserting the entry to parent block
             if self.insert_entry_to_old_block(&mut block, child, name) {
                 return Ok(());
@@ -59,7 +59,7 @@ impl Ext4 {
         // Append a new data block
         let (_, fblock) = self.inode_append_block(parent)?;
         // Load new block
-        let mut new_block = self.block_device.read_block(fblock);
+        let mut new_block = self.read_block(fblock);
         // Write the entry to block
         self.insert_entry_to_new_block(&mut new_block, child, name);
 
@@ -83,7 +83,7 @@ impl Ext4 {
             // Get the parent physical block id
             let fblock = self.extent_get_pblock(parent, iblock)?;
             // Load the block from disk
-            let mut block = self.block_device.read_block(fblock);
+            let mut block = self.read_block(fblock);
             // Try removing the entry
             if let Ok(inode) = self.remove_entry_from_block(&mut block, name) {
                 return Ok(inode);
@@ -151,7 +151,7 @@ impl Ext4 {
         dst_blk.write_offset_as(tail_offset, &tail);
 
         // Sync block to disk
-        dst_blk.sync_to_disk(self.block_device.clone());
+        self.write_block(&dst_blk);
     }
 
     /// Try insert a directory entry of child inode into a parent block.
@@ -197,7 +197,7 @@ impl Ext4 {
             dst_blk.write_offset_as(tail_offset, &tail);
 
             // Sync to disk
-            dst_blk.sync_to_disk(self.block_device.clone());
+            self.write_block(&dst_blk);
             return true;
         }
         false

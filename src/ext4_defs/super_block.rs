@@ -13,7 +13,7 @@ use crate::AsBytes;
 // 结构体表示超级块
 #[repr(C)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Superblock {
+pub struct SuperBlock {
     inodes_count: u32,             // 节点数
     blocks_count_lo: u32,          // 块数
     reserved_blocks_count_lo: u32, // 保留块数
@@ -113,9 +113,20 @@ pub struct Superblock {
     checksum: u32,             // crc32c(superblock)
 }
 
-impl AsBytes for Superblock {}
+impl AsBytes for SuperBlock {}
 
-impl Superblock {
+impl SuperBlock {
+    pub fn load_from_disk(block_device: &dyn BlockDevice) -> Self {
+        let block = block_device.read_block(0);
+        block.read_offset_as(BASE_OFFSET)
+    }
+
+    pub fn sync_to_disk(&self, block_device: &dyn BlockDevice) {
+        let mut block = block_device.read_block(0);
+        block.write_offset_as(BASE_OFFSET, self);
+        block_device.write_block(&block)
+    }
+
     pub fn first_data_block(&self) -> u32 {
         self.first_data_block
     }
@@ -123,7 +134,7 @@ impl Superblock {
     pub fn free_inodes_count(&self) -> u32 {
         self.free_inodes_count
     }
-    
+
     pub fn features_read_only(&self) -> u32 {
         self.features_read_only
     }
@@ -136,7 +147,7 @@ impl Superblock {
     pub fn total_inodes(&self) -> u32 {
         self.inodes_count
     }
-    
+
     /// Returns the number of blocks in each block group.
     pub fn blocks_per_group(&self) -> u32 {
         self.blocks_per_group
@@ -146,19 +157,19 @@ impl Superblock {
     pub fn block_size(&self) -> u32 {
         1024 << self.log_block_size
     }
-    
+
     /// Returns the number of inodes in each block group.
     pub fn inodes_per_group(&self) -> u32 {
         self.inodes_per_group
     }
-    
+
     /// Returns the number of block groups.
     /// FIXME: This function is not correct.
     pub fn block_groups_count(&self) -> u32 {
         (((self.blocks_count_hi.to_le() as u64) << 32) as u32 | self.blocks_count_lo)
-        / self.blocks_per_group
+            / self.blocks_per_group
     }
-    
+
     /// Returns the size of inode structure.
     pub fn inode_size(&self) -> u16 {
         self.inode_size
@@ -222,11 +233,5 @@ impl Superblock {
     pub fn set_free_blocks_count(&mut self, free_blocks: u64) {
         self.free_blocks_count_lo = ((free_blocks << 32) >> 32).to_le() as u32;
         self.free_blocks_count_hi = (free_blocks >> 32) as u32;
-    }
-    
-    pub fn sync_to_disk(&self, block_device: Arc<dyn BlockDevice>) {
-        let mut block = block_device.read_block(0);
-        block.write_offset_as(BASE_OFFSET, self);
-        block.sync_to_disk(block_device);
     }
 }

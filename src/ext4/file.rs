@@ -123,7 +123,7 @@ impl Ext4 {
         if misaligned > 0 {
             let read_len = min(BLOCK_SIZE - misaligned, size_to_read);
             let fblock = self.extent_get_pblock(&mut inode_ref, start_iblock)?;
-            let block = self.block_device.read_block(fblock);
+            let block = self.read_block(fblock);
             // Copy data from block to the user buffer
             read_buf[cursor..cursor + read_len]
                 .copy_from_slice(block.read_offset(misaligned, read_len));
@@ -135,7 +135,7 @@ impl Ext4 {
         while cursor < size_to_read {
             let read_len = min(BLOCK_SIZE, size_to_read - cursor);
             let fblock = self.extent_get_pblock(&mut inode_ref, iblock)?;
-            let block = self.block_device.read_block(fblock);
+            let block = self.read_block(fblock);
             // Copy data from block to the user buffer
             read_buf[cursor..cursor + read_len].copy_from_slice(block.read_offset(0, read_len));
             cursor += read_len;
@@ -169,9 +169,9 @@ impl Ext4 {
         while cursor < size {
             let write_len = min(BLOCK_SIZE, size - cursor);
             let fblock = self.extent_get_pblock(&mut inode_ref, iblock)?;
-            let mut block = self.block_device.read_block(fblock);
+            let mut block = self.read_block(fblock);
             block.write_offset(file.fpos % BLOCK_SIZE, &data[cursor..cursor + write_len]);
-            block.sync_to_disk(self.block_device.clone());
+            self.write_block(&block);
 
             cursor += write_len;
             file.fpos += write_len;

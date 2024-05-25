@@ -10,7 +10,7 @@
 use super::crc::*;
 use super::Bitmap;
 use super::BlockDevice;
-use super::Superblock;
+use super::SuperBlock;
 use crate::constants::*;
 use crate::prelude::*;
 use crate::AsBytes;
@@ -47,7 +47,7 @@ pub struct BlockGroupDesc {
 impl AsBytes for BlockGroupDesc {}
 
 impl BlockGroupDesc {
-    pub fn block_bitmap_block(&self, s: &Superblock) -> PBlockId {
+    pub fn block_bitmap_block(&self, s: &SuperBlock) -> PBlockId {
         let mut v = self.block_bitmap_lo as u64;
         if s.desc_size() > EXT4_MIN_BLOCK_GROUP_DESCRIPTOR_SIZE {
             v |= (self.block_bitmap_hi as u64) << 32;
@@ -55,7 +55,7 @@ impl BlockGroupDesc {
         v
     }
 
-    pub fn inode_bitmap_block(&self, s: &Superblock) -> PBlockId {
+    pub fn inode_bitmap_block(&self, s: &SuperBlock) -> PBlockId {
         let mut v = self.inode_bitmap_lo as u64;
         if s.desc_size() > EXT4_MIN_BLOCK_GROUP_DESCRIPTOR_SIZE {
             v |= (self.inode_bitmap_hi as u64) << 32;
@@ -63,7 +63,7 @@ impl BlockGroupDesc {
         v
     }
 
-    pub fn itable_unused(&mut self, s: &Superblock) -> u32 {
+    pub fn itable_unused(&mut self, s: &SuperBlock) -> u32 {
         let mut v = self.itable_unused_lo as u32;
         if s.desc_size() > EXT4_MIN_BLOCK_GROUP_DESCRIPTOR_SIZE {
             v |= ((self.itable_unused_hi as u64) << 32) as u32;
@@ -71,7 +71,7 @@ impl BlockGroupDesc {
         v
     }
 
-    pub fn used_dirs_count(&self, s: &Superblock) -> u32 {
+    pub fn used_dirs_count(&self, s: &SuperBlock) -> u32 {
         let mut v = self.used_dirs_count_lo as u32;
         if s.desc_size() > EXT4_MIN_BLOCK_GROUP_DESCRIPTOR_SIZE {
             v |= ((self.used_dirs_count_hi as u64) << 32) as u32;
@@ -79,21 +79,21 @@ impl BlockGroupDesc {
         v
     }
 
-    pub fn set_used_dirs_count(&mut self, s: &Superblock, cnt: u32) {
+    pub fn set_used_dirs_count(&mut self, s: &SuperBlock, cnt: u32) {
         self.itable_unused_lo = ((cnt << 16) >> 16) as u16;
         if s.desc_size() > EXT4_MIN_BLOCK_GROUP_DESCRIPTOR_SIZE {
             self.itable_unused_hi = (cnt >> 16) as u16;
         }
     }
 
-    pub fn set_itable_unused(&mut self, s: &Superblock, cnt: u32) {
+    pub fn set_itable_unused(&mut self, s: &SuperBlock, cnt: u32) {
         self.itable_unused_lo = ((cnt << 16) >> 16) as u16;
         if s.desc_size() > EXT4_MIN_BLOCK_GROUP_DESCRIPTOR_SIZE {
             self.itable_unused_hi = (cnt >> 16) as u16;
         }
     }
 
-    pub fn set_free_inodes_count(&mut self, s: &Superblock, cnt: u32) {
+    pub fn set_free_inodes_count(&mut self, s: &SuperBlock, cnt: u32) {
         self.free_inodes_count_lo = ((cnt << 16) >> 16) as u16;
         if s.desc_size() > EXT4_MIN_BLOCK_GROUP_DESCRIPTOR_SIZE {
             self.free_inodes_count_hi = (cnt >> 16) as u16;
@@ -121,7 +121,7 @@ impl BlockGroupDesc {
         self.free_blocks_count_hi = (cnt >> 32) as u16;
     }
 
-    pub fn calc_inode_bitmap_csum(bitmap: &Bitmap, s: &Superblock) -> u32 {
+    pub fn calc_inode_bitmap_csum(bitmap: &Bitmap, s: &SuperBlock) -> u32 {
         let inodes_per_group = s.inodes_per_group();
         let uuid = s.uuid();
         let mut csum = ext4_crc32c(EXT4_CRC32_INIT, &uuid, uuid.len() as u32);
@@ -129,7 +129,7 @@ impl BlockGroupDesc {
         csum
     }
 
-    pub fn calc_block_bitmap_csum(bitmap: &Bitmap, s: &Superblock) -> u32 {
+    pub fn calc_block_bitmap_csum(bitmap: &Bitmap, s: &SuperBlock) -> u32 {
         let blocks_per_group = s.blocks_per_group();
         let uuid = s.uuid();
         let mut csum = ext4_crc32c(EXT4_CRC32_INIT, &uuid, uuid.len() as u32);
@@ -137,7 +137,7 @@ impl BlockGroupDesc {
         csum
     }
 
-    pub fn set_inode_bitmap_csum(&mut self, s: &Superblock, bitmap: &Bitmap) {
+    pub fn set_inode_bitmap_csum(&mut self, s: &SuperBlock, bitmap: &Bitmap) {
         let desc_size = s.desc_size();
 
         let csum = Self::calc_inode_bitmap_csum(&bitmap, s);
@@ -153,7 +153,7 @@ impl BlockGroupDesc {
         }
     }
 
-    pub fn set_block_bitmap_csum(&mut self, s: &Superblock, bitmap: &Bitmap) {
+    pub fn set_block_bitmap_csum(&mut self, s: &SuperBlock, bitmap: &Bitmap) {
         let desc_size = s.desc_size();
 
         let csum = Self::calc_block_bitmap_csum(&bitmap, s);
@@ -182,8 +182,8 @@ pub struct BlockGroupRef {
 impl BlockGroupRef {
     /// Load a block group descriptor from the disk
     pub fn load_from_disk(
-        block_device: Arc<dyn BlockDevice>,
-        super_block: &Superblock,
+        block_device: &dyn BlockDevice,
+        super_block: &SuperBlock,
         block_group_id: BlockGroupId,
     ) -> Self {
         let (block_id, offset) = Self::disk_pos(super_block, block_group_id);
@@ -194,37 +194,37 @@ impl BlockGroupRef {
             desc,
         }
     }
+    
+    pub fn sync_to_disk_without_csum(
+        &self,
+        block_device: &dyn BlockDevice,
+        super_block: &SuperBlock,
+    ) {
+        let (block_id, offset) = Self::disk_pos(super_block, self.id);
+        let mut block = block_device.read_block(block_id as PBlockId);
+        block.write_offset_as(offset, &self.desc);
+        block_device.write_block(&block)
+    }
+
+    pub fn sync_to_disk_with_csum(
+        &mut self,
+        block_device: &dyn BlockDevice,
+        super_block: &SuperBlock,
+    ) {
+        self.set_checksum(super_block);
+        self.sync_to_disk_without_csum(block_device, super_block);
+    }
 
     /// Find the position of a block group descriptor in the block device.
     /// Return the block id and the offset within the block.
-    fn disk_pos(s: &Superblock, block_group_id: BlockGroupId) -> (PBlockId, usize) {
+    fn disk_pos(s: &SuperBlock, block_group_id: BlockGroupId) -> (PBlockId, usize) {
         let desc_per_block = BLOCK_SIZE as u32 / s.desc_size() as u32;
         let block_id = s.first_data_block() + block_group_id / desc_per_block + 1;
         let offset = (block_group_id % desc_per_block) * s.desc_size() as u32;
         (block_id as PBlockId, offset as usize)
     }
 
-    pub fn sync_to_disk_without_csum(
-        &self,
-        block_device: Arc<dyn BlockDevice>,
-        super_block: &Superblock,
-    ) {
-        let (block_id, offset) = Self::disk_pos(super_block, self.id);
-        let mut block = block_device.read_block(block_id as PBlockId);
-        block.write_offset_as(offset, &self.desc);
-        block.sync_to_disk(block_device);
-    }
-
-    pub fn sync_to_disk_with_csum(
-        &mut self,
-        block_device: Arc<dyn BlockDevice>,
-        super_block: &Superblock,
-    ) {
-        self.set_checksum(super_block);
-        self.sync_to_disk_without_csum(block_device, super_block);
-    }
-
-    pub fn set_checksum(&mut self, super_block: &Superblock) {
+    fn set_checksum(&mut self, super_block: &SuperBlock) {
         let desc_size = super_block.desc_size();
 
         // uuid checksum

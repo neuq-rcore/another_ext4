@@ -4,7 +4,7 @@
 //! linear array of directory entries.
 
 use super::crc::*;
-use super::Superblock;
+use super::SuperBlock;
 use crate::constants::*;
 use crate::prelude::*;
 use crate::AsBytes;
@@ -163,7 +163,7 @@ impl DirEntry {
         Self::required_size(self.name_len as usize)
     }
 
-    pub fn calc_csum(&self, s: &Superblock, blk_data: &[u8]) -> u32 {
+    pub fn calc_csum(&self, s: &SuperBlock, blk_data: &[u8]) -> u32 {
         let ino_index = self.inode;
         let ino_gen = 0 as u32;
 
@@ -194,7 +194,7 @@ pub struct DirEntryTail {
 impl AsBytes for DirEntryTail {}
 
 impl DirEntryTail {
-    pub fn set_csum(&mut self, s: &Superblock, diren: &DirEntry, blk_data: &[u8]) {
+    pub fn set_csum(&mut self, s: &SuperBlock, diren: &DirEntry, blk_data: &[u8]) {
         self.checksum = diren.calc_csum(s, blk_data);
     }
 }
