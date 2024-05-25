@@ -6,85 +6,17 @@ use crate::return_errno_with_message;
 use core::cmp::min;
 
 impl Ext4 {
-    fn split_path(path: &str) -> Vec<String> {
-        let _ = path.trim_start_matches("/");
-        path.split("/").map(|s| s.to_string()).collect()
-    }
-
-    /// Open an object of any type in the filesystem. Return the inode
-    /// id of the object if found.
-    ///
-    /// ## Params
-    /// * `root` - The inode id of the starting directory for the search.
-    /// * `path` - The path of the object to open.
-    /// * `ftype` - The expect type of object to open.
-    /// * `flags` - The open flags. If the flags contains `O_CREAT`, the file
-    ///             will be created if it does not exist.
-    pub(super) fn generic_open(
-        &mut self,
-        root: InodeId,
-        path: &str,
-        ftype: FileType,
-        flags: OpenFlags,
-    ) -> Result<InodeId> {
-        info!("generic open: {}", path);
-        // Search from the given parent inode
-        let mut parent_id = root;
-        let search_path = Self::split_path(path);
-
-        for (i, path) in search_path.iter().enumerate() {
-            let mut parent = self.read_inode(parent_id);
-            let res = self.dir_find_entry(&parent, path);
-            match res {
-                Ok(entry) => {
-                    parent_id = entry.inode();
-                }
-                Err(e) => {
-                    if e.code() != ErrCode::ENOENT {
-                        // dir search failed with error other than ENOENT
-                        return_errno_with_message!(ErrCode::ENOTSUP, "dir search failed");
-                    }
-                    if !flags.contains(OpenFlags::O_CREAT) {
-                        return_errno_with_message!(ErrCode::ENOENT, "file not found");
-                    }
-                    // Create file/directory
-                    let mut child = if i == search_path.len() - 1 {
-                        self.create_inode(ftype)
-                    } else {
-                        self.create_inode(FileType::Directory)
-                    }?;
-                    // Link the new inode
-                    self.link(&mut parent, &mut child, path)
-                        .map_err(|_| Ext4Error::with_message(ErrCode::ELINKFAIL, "link fail"))?;
-                    // Write back parent and child
-                    self.write_inode_with_csum(&mut parent);
-                    self.write_inode_with_csum(&mut child);
-                    // Update parent
-                    parent_id = child.id;
-                }
-            }
-        }
-        // `parent` is the target inode
-        Ok(parent_id)
-    }
-
-    pub fn open(&mut self, path: &str, flags: &str, file_expect: bool) -> Result<File> {
+    /// Open a regular file, return a file descriptor
+    pub fn open_file(&mut self, path: &str, flags: &str) -> Result<File> {
         // open flags
         let open_flags = OpenFlags::from_str(flags).unwrap();
-        // file type
-        let file_type = if file_expect {
-            FileType::RegularFile
-        } else {
-            FileType::Directory
-        };
         // TODO:journal
         if open_flags.contains(OpenFlags::O_CREAT) {
             self.trans_start();
         }
         // open file
-        let res = self.generic_open(EXT4_ROOT_INO, path, file_type, open_flags);
-        res.map(|inode_id| {
-            let inode = self.read_inode(inode_id);
+        let res = self.generic_open(EXT4_ROOT_INO, path, open_flags, Some(FileType::RegularFile));
+        res.map(|inode| {
             File::new(
                 self.mount_point.clone(),
                 inode.id,
@@ -94,7 +26,9 @@ impl Ext4 {
         })
     }
 
-    pub fn read(&self, file: &mut File, read_buf: &mut [u8], read_size: usize) -> Result<usize> {
+    /// Read `read_buf.len()` bytes from the file
+    pub fn read_file(&self, file: &mut File, read_buf: &mut [u8]) -> Result<usize> {
+        let read_size = read_buf.len();
         // Read no bytes
         if read_size == 0 {
             return Ok(0);
@@ -146,15 +80,16 @@ impl Ext4 {
         Ok(cursor)
     }
 
-    pub fn write(&mut self, file: &mut File, data: &[u8]) -> Result<()> {
-        let size = data.len();
+    /// Write `data` to file
+    pub fn write_file(&mut self, file: &mut File, data: &[u8]) -> Result<()> {
+        let write_size = data.len();
         let mut inode_ref = self.read_inode(file.inode);
         // Sync ext file
         file.fsize = inode_ref.inode.size();
 
         // Calc the start and end block of reading
         let start_iblock = (file.fpos / BLOCK_SIZE) as LBlockId;
-        let end_iblock = ((file.fpos + size) / BLOCK_SIZE) as LBlockId;
+        let end_iblock = ((file.fpos + write_size) / BLOCK_SIZE) as LBlockId;
         // Calc the block count of the file
         let block_count = (file.fsize as usize + BLOCK_SIZE - 1) / BLOCK_SIZE;
         // Append enough block for writing
@@ -166,8 +101,8 @@ impl Ext4 {
         // Write data
         let mut cursor = 0;
         let mut iblock = start_iblock;
-        while cursor < size {
-            let write_len = min(BLOCK_SIZE, size - cursor);
+        while cursor < write_size {
+            let write_len = min(BLOCK_SIZE, write_size - cursor);
             let fblock = self.extent_get_pblock(&mut inode_ref, iblock)?;
             let mut block = self.read_block(fblock);
             block.write_offset(file.fpos % BLOCK_SIZE, &data[cursor..cursor + write_len]);
@@ -180,29 +115,123 @@ impl Ext4 {
         Ok(())
     }
 
+    /// Remove a regular file
     pub fn remove_file(&mut self, path: &str) -> Result<()> {
+        self.generic_remove(EXT4_ROOT_INO, path, Some(FileType::RegularFile))
+    }
+
+    /// Open an object of any type in the filesystem. Return the inode
+    /// of the object if found.
+    ///
+    /// ## Params
+    /// * `root` - The inode id of the starting directory for the search.
+    /// * `path` - The path of the object to be opened.
+    /// * `flags` - The open flags. If the flags contains `O_CREAT`, and `expect_type`
+    ///    is provided, the function will create a new inode of the specified type.
+    /// * `expect_type` - The expect type of object to open, optional. If this
+    ///    parameter is provided, the function will check the type of the object
+    ///    to open.
+    pub(super) fn generic_open(
+        &mut self,
+        root: InodeId,
+        path: &str,
+        flags: OpenFlags,
+        expect_type: Option<FileType>,
+    ) -> Result<InodeRef> {
+        // Search from the given parent inode
+        info!("generic_open: root {}, path {}", root, path);
+        let mut cur = self.read_inode(root);
+        let search_path = Self::split_path(path);
+
+        for (i, path) in search_path.iter().enumerate() {
+            let res = self.dir_find_entry(&cur, path);
+            match res {
+                Ok(entry) => {
+                    cur = self.read_inode(entry.inode());
+                }
+                Err(e) => {
+                    if e.code() != ErrCode::ENOENT {
+                        // dir search failed with error other than ENOENT
+                        return_errno_with_message!(ErrCode::ENOTSUP, "dir search failed");
+                    }
+                    if !flags.contains(OpenFlags::O_CREAT) || expect_type.is_none() {
+                        // `O_CREAT` and `expect_type` must be provided together to
+                        // create a new object
+                        return_errno_with_message!(ErrCode::ENOENT, "file not found");
+                    }
+                    // Create file/directory
+                    let mut child = if i == search_path.len() - 1 {
+                        self.create_inode(expect_type.unwrap())
+                    } else {
+                        self.create_inode(FileType::Directory)
+                    }?;
+                    // Link the new inode
+                    self.link(&mut cur, &mut child, path)
+                        .map_err(|_| Ext4Error::with_message(ErrCode::ELINKFAIL, "link fail"))?;
+                    // Write back parent and child
+                    self.write_inode_with_csum(&mut cur);
+                    self.write_inode_with_csum(&mut child);
+                    // Update parent
+                    cur = child;
+                }
+            }
+        }
+        // `cur` is the target inode, check type if `expect_type` os provided
+        if let Some(expect_type) = expect_type {
+            if inode_mode2file_type(cur.inode.mode()) != expect_type {
+                return_errno_with_message!(ErrCode::EISDIR, "inode type mismatch");
+            }
+        }
+        Ok(cur)
+    }
+
+    /// Remove an object of any type from the filesystem. Return the inode
+    /// of the object if found.
+    ///
+    /// ## Params
+    /// * `root` - The inode id of the starting directory for the search.
+    /// * `path` - The path of the object to be removed.
+    /// * `expect_type` - The expect type of object to open, optional. If this
+    ///    parameter is provided, the function will check the type of the object
+    ///    to open.
+    pub(super) fn generic_remove(
+        &mut self,
+        root: InodeId,
+        path: &str,
+        expect_type: Option<FileType>,
+    ) -> Result<()> {
         // Get the parent directory path and the file name
         let mut search_path = Self::split_path(path);
         let file_name = &search_path.split_off(search_path.len() - 1)[0];
         let parent_path = search_path.join("/");
         // Get the parent directory inode
-        let parent_inode_id = self.generic_open(
-            EXT4_ROOT_INO,
+        let mut parent_inode = self.generic_open(
+            root,
             &parent_path,
-            FileType::Directory,
             OpenFlags::O_RDONLY,
+            Some(FileType::Directory),
         )?;
         // Get the file inode, check the existence and type
-        let child_inode_id = self.generic_open(
-            parent_inode_id,
-            file_name,
-            FileType::RegularFile,
-            OpenFlags::O_RDONLY,
-        )?;
+        let mut child_inode =
+            self.generic_open(parent_inode.id, file_name, OpenFlags::O_RDONLY, expect_type)?;
+
         // Remove the file from the parent directory
-        let mut parent_inode = self.read_inode(parent_inode_id);
         self.dir_remove_entry(&mut parent_inode, &file_name)?;
-        // Free the inode of the file
-        self.free_inode(child_inode_id)
+        // Update the link count of inode
+        let link_cnt = child_inode.inode.links_cnt() - 1;
+        if link_cnt == 0 {
+            // Free the inode of the file if link count is 0
+            return self.free_inode(&mut child_inode);
+        }
+        child_inode.inode.set_links_cnt(link_cnt);
+        Ok(())
+    }
+
+    fn split_path(path: &str) -> Vec<String> {
+        let _ = path.trim_start_matches("/");
+        if path.is_empty() {
+            return vec![]; // root
+        }
+        path.split("/").map(|s| s.to_string()).collect()
     }
 }

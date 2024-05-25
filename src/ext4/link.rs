@@ -17,9 +17,7 @@ impl Ext4 {
             // add '.' and '..' entries
             let child_self = child.clone();
             self.dir_add_entry(child, &child_self, ".")?;
-            child.inode.links_count += 1;
             self.dir_add_entry(child, parent, "..")?;
-            parent.inode.links_count += 1;
         }
         Ok(())
     }

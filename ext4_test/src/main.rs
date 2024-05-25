@@ -1,5 +1,4 @@
 use ext4_rs::{Block, BlockDevice, Ext4, BLOCK_SIZE};
-use log::warn;
 use simple_logger::SimpleLogger;
 use std::fs::{File, OpenOptions};
 use std::io::{Read, Seek, SeekFrom, Write};
@@ -60,33 +59,32 @@ fn open_ext4() -> Ext4 {
 }
 
 fn mkdir_test(ext4: &mut Ext4) {
-    ext4.mkdir("d1").expect("mkdir failed");
-    ext4.mkdir("d1/d2").expect("mkdir failed");
-    ext4.mkdir("d1/d2/d3").expect("mkdir failed");
-    ext4.mkdir("d1/d2/d3/d4").expect("mkdir failed");
-    ext4.mkdir("d2").expect("mkdir failed");
-    ext4.mkdir("d2/d3").expect("mkdir failed");
-    ext4.mkdir("d2/d3/d4").expect("mkdir failed");
-    ext4.mkdir("d3").expect("mkdir failed");
+    ext4.make_dir("d1").expect("mkdir failed");
+    ext4.make_dir("d1/d2").expect("mkdir failed");
+    ext4.make_dir("d1/d2/d3").expect("mkdir failed");
+    ext4.make_dir("d1/d2/d3/d4").expect("mkdir failed");
+    ext4.make_dir("d2").expect("mkdir failed");
+    ext4.make_dir("d2/d3").expect("mkdir failed");
+    ext4.make_dir("d2/d3/d4").expect("mkdir failed");
+    ext4.make_dir("d3").expect("mkdir failed");
 }
 
 fn open_test(ext4: &mut Ext4) {
-    ext4.open("d1/d2/d3/d4/f1", "w+", true)
-        .expect("open failed");
-    ext4.open("d1/d2/d3/d4/f1", "r", true).expect("open failed");
-    ext4.open("d1/d2/d3/d4/f5", "a", true).expect("open failed");
-    ext4.open("d2/f4", "w+", true).expect("open failed");
-    ext4.open("f1", "w+", true).expect("open failed");
+    ext4.open_file("d1/d2/d3/d4/f1", "w+").expect("open failed");
+    ext4.open_file("d1/d2/d3/d4/f1", "r").expect("open failed");
+    ext4.open_file("d1/d2/d3/d4/f5", "a").expect("open failed");
+    ext4.open_file("d2/f4", "w+").expect("open failed");
+    ext4.open_file("f1", "w+").expect("open failed");
 }
 
 fn read_write_test(ext4: &mut Ext4) {
     let wbuffer = "hello world".as_bytes();
-    let mut wfile = ext4.open("d3/f0", "w+", true).expect("open failed");
-    ext4.write(&mut wfile, wbuffer).expect("write failed");
+    let mut wfile = ext4.open_file("d3/f0", "w+").expect("open failed");
+    ext4.write_file(&mut wfile, wbuffer).expect("write failed");
 
     let mut rbuffer = vec![0u8; wbuffer.len()];
-    let mut rfile = ext4.open("d3/f0", "r", true).expect("open failed");
-    ext4.read(&mut rfile, &mut rbuffer, wbuffer.len())
+    let mut rfile = ext4.open_file("d3/f0", "r").expect("open failed");
+    ext4.read_file(&mut rfile, &mut rbuffer)
         .expect("read failed");
 
     assert_eq!(wbuffer, rbuffer);
@@ -94,12 +92,12 @@ fn read_write_test(ext4: &mut Ext4) {
 
 fn large_read_write_test(ext4: &mut Ext4) {
     let wbuffer = vec![99u8; 1024 * 1024 * 16];
-    let mut wfile = ext4.open("d3/f1", "w+", true).expect("open failed");
-    ext4.write(&mut wfile, &wbuffer).expect("write failed");
+    let mut wfile = ext4.open_file("d3/f1", "w+").expect("open failed");
+    ext4.write_file(&mut wfile, &wbuffer).expect("write failed");
 
-    let mut rfile = ext4.open("d3/f1", "r", true).expect("open failed");
+    let mut rfile = ext4.open_file("d3/f1", "r").expect("open failed");
     let mut rbuffer = vec![0u8; wbuffer.len()];
-    ext4.read(&mut rfile, &mut rbuffer, wbuffer.len())
+    ext4.read_file(&mut rfile, &mut rbuffer)
         .expect("read failed");
 
     assert_eq!(wbuffer, rbuffer);
@@ -107,12 +105,18 @@ fn large_read_write_test(ext4: &mut Ext4) {
 
 fn remove_file_test(ext4: &mut Ext4) {
     ext4.remove_file("d3/f0").expect("remove file failed");
-    ext4.open("d3/f0", "r", true).expect_err("open failed");
+    ext4.open_file("d3/f0", "r").expect_err("open failed");
     ext4.remove_file("d3/f1").expect("remove file failed");
-    ext4.open("d3/f1", "r", true).expect_err("open failed");
+    ext4.open_file("d3/f1", "r").expect_err("open failed");
     ext4.remove_file("f1").expect("remove file failed");
-    ext4.open("f1", "r", true).expect_err("open failed");
-    ext4.remove_file("d1/not_exist").expect_err("remove file failed");
+    ext4.open_file("f1", "r").expect_err("open failed");
+    ext4.remove_file("d1/not_exist")
+        .expect_err("remove file failed");
+}
+
+fn remove_dir_test(ext4: &mut Ext4) {
+    ext4.remove_dir("d2").expect("remove dir failed");
+    ext4.open_file("d2/f4", "r").expect_err("open failed");
 }
 
 fn main() {
@@ -130,7 +134,9 @@ fn main() {
     println!("read write test done");
     large_read_write_test(&mut ext4);
     println!("large read write test done");
-    log::set_max_level(log::LevelFilter::Debug);
     remove_file_test(&mut ext4);
     println!("remove file test done");
+    log::set_max_level(log::LevelFilter::Debug);
+    remove_dir_test(&mut ext4);
+    println!("remove dir test done");
 }

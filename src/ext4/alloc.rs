@@ -54,21 +54,20 @@ impl Ext4 {
     }
 
     /// Free an allocated inode and all data blocks allocated for it
-    pub(super) fn free_inode(&mut self, inode_id: InodeId) -> Result<()> {
-        let mut inode = self.read_inode(inode_id);
+    pub(super) fn free_inode(&mut self, inode_ref: &mut InodeRef) -> Result<()> {
         // Free the data blocks allocated for the inode
-        let pblocks = self.extent_get_all_pblocks(&inode)?;
+        let pblocks = self.extent_get_all_pblocks(&inode_ref)?;
         for pblock in pblocks {
             // Deallocate the block
-            self.dealloc_block(&mut inode, pblock)?;
+            self.dealloc_block(inode_ref, pblock)?;
             // Clear the block content
             self.write_block(&Block::new(pblock, [0; BLOCK_SIZE]));
         }
         // Deallocate the inode
-        self.dealloc_inode(&inode)?;
+        self.dealloc_inode(&inode_ref)?;
         // Clear the inode content
-        inode.inode = unsafe { core::mem::zeroed() };
-        self.write_inode_without_csum(&mut inode);
+        inode_ref.inode = unsafe { core::mem::zeroed() };
+        self.write_inode_without_csum(inode_ref);
         Ok(())
     }
 

@@ -4,16 +4,40 @@ use crate::ext4_defs::*;
 use crate::prelude::*;
 
 impl Ext4 {
-    /// Find a directory entry that matches a given name under a parent directory
-    pub(super) fn dir_find_entry(&self, parent: &InodeRef, name: &str) -> Result<DirEntry> {
-        info!("Dir find entry {} under parent {}", name, parent.id);
-        let inode_size: u32 = parent.inode.size;
-        let total_blocks: u32 = inode_size / BLOCK_SIZE as u32;
-        let mut iblock: LBlockId = 0;
+    /// Create a new directory. `path` is the absolute path of the new directory.
+    pub fn make_dir(&mut self, path: &str) -> Result<()> {
+        self.generic_open(
+            EXT4_ROOT_INO,
+            path,
+            OpenFlags::O_CREAT,
+            Some(FileType::Directory),
+        )
+        .map(|_| {
+            info!("ext4_dir_mk: {} ok", path);
+        })
+    }
 
+    /// Remove a directory recursively. `path` is the absolute path of the directory.
+    pub fn remove_dir(&mut self, path: &str) -> Result<()> {
+        let mut dir = self.generic_open(
+            EXT4_ROOT_INO,
+            path,
+            OpenFlags::O_RDONLY,
+            Some(FileType::Directory),
+        )?;
+        self.remove_dir_recursive(&mut dir)
+    }
+
+    /// Find a directory entry that matches a given name under a parent directory
+    pub(super) fn dir_find_entry(&self, dir: &InodeRef, name: &str) -> Result<DirEntry> {
+        info!("Dir find entry: dir {}, name {}", dir.id, name);
+        let inode_size: u32 = dir.inode.size;
+        let total_blocks: u32 = inode_size / BLOCK_SIZE as u32;
+
+        let mut iblock: LBlockId = 0;
         while iblock < total_blocks {
             // Get the fs block id
-            let fblock = self.extent_get_pblock(parent, iblock)?;
+            let fblock = self.extent_get_pblock(dir, iblock)?;
             // Load block from disk
             let block = self.read_block(fblock);
             // Find the entry in block
@@ -29,22 +53,22 @@ impl Ext4 {
     /// Add an entry to a directory
     pub(super) fn dir_add_entry(
         &mut self,
-        parent: &mut InodeRef,
+        dir: &mut InodeRef,
         child: &InodeRef,
         name: &str,
     ) -> Result<()> {
         info!(
-            "Dir add entry: parent {}, child {}, path {}",
-            parent.id, child.id, name
+            "Dir add entry: dir {}, child {}, name {}",
+            dir.id, child.id, name
         );
-        let inode_size = parent.inode.size();
+        let inode_size = dir.inode.size();
         let total_blocks = inode_size as u32 / BLOCK_SIZE as u32;
 
         // Try finding a block with enough space
         let mut iblock: LBlockId = 0;
         while iblock < total_blocks {
             // Get the parent physical block id
-            let fblock = self.extent_get_pblock(parent, iblock)?;
+            let fblock = self.extent_get_pblock(dir, iblock)?;
             // Load the parent block from disk
             let mut block = self.read_block(fblock);
             // Try inserting the entry to parent block
@@ -57,7 +81,7 @@ impl Ext4 {
 
         // No free block found - needed to allocate a new data block
         // Append a new data block
-        let (_, fblock) = self.inode_append_block(parent)?;
+        let (_, fblock) = self.inode_append_block(dir)?;
         // Load new block
         let mut new_block = self.read_block(fblock);
         // Write the entry to block
@@ -67,16 +91,16 @@ impl Ext4 {
     }
 
     /// Remove a entry from a directory
-    pub(super) fn dir_remove_entry(&mut self, parent: &mut InodeRef, name: &str) -> Result<()> {
-        info!("Dir remove entry: parent {}, path {}", parent.id, name);
-        let inode_size = parent.inode.size();
+    pub(super) fn dir_remove_entry(&mut self, dir: &mut InodeRef, name: &str) -> Result<()> {
+        info!("Dir remove entry: dir {}, path {}", dir.id, name);
+        let inode_size = dir.inode.size();
         let total_blocks = inode_size as u32 / BLOCK_SIZE as u32;
 
         // Check each block
         let mut iblock: LBlockId = 0;
         while iblock < total_blocks {
             // Get the parent physical block id
-            let fblock = self.extent_get_pblock(parent, iblock)?;
+            let fblock = self.extent_get_pblock(dir, iblock)?;
             // Load the block from disk
             let mut block = self.read_block(fblock);
             // Try removing the entry
@@ -90,6 +114,26 @@ impl Ext4 {
 
         // Not found the target entry
         Err(Ext4Error::new(ErrCode::ENOENT))
+    }
+
+    /// Get all entries under a directory
+    pub(super) fn dir_get_all_entries(&self, dir: &mut InodeRef) -> Result<Vec<DirEntry>> {
+        info!("Dir get all entries: dir {}", dir.id);
+        let inode_size: u32 = dir.inode.size;
+        let total_blocks: u32 = inode_size / BLOCK_SIZE as u32;
+        let mut entries: Vec<DirEntry> = Vec::new();
+
+        let mut iblock: LBlockId = 0;
+        while iblock < total_blocks {
+            // Get the fs block id
+            let fblock = self.extent_get_pblock(dir, iblock)?;
+            // Load block from disk
+            let block = self.read_block(fblock);
+            // Get all entries from block
+            Self::get_all_entries_from_block(&block, &mut entries);
+            iblock += 1;
+        }
+        Ok(entries)
     }
 
     /// Find a directory entry that matches a given name in a given block
@@ -122,6 +166,20 @@ impl Ext4 {
             offset += de.rec_len() as usize;
         }
         Err(Ext4Error::new(ErrCode::ENOENT))
+    }
+
+    /// Get all directory entries from a given block
+    fn get_all_entries_from_block(block: &Block, entries: &mut Vec<DirEntry>) {
+        info!("Dir get all entries from block {}", block.block_id);
+        let mut offset = 0;
+        while offset < BLOCK_SIZE {
+            let de: DirEntry = block.read_offset_as(offset);
+            offset += de.rec_len() as usize;
+            if !de.unused() {
+                debug!("Dir entry: {} {:?}", de.rec_len(), de.name());
+                entries.push(de);
+            }
+        }
     }
 
     /// Insert a directory entry of a child inode into a new parent block.
@@ -200,12 +258,28 @@ impl Ext4 {
         false
     }
 
-    /// Create a new directory. `path` is the absolute path of the new directory.
-    pub fn mkdir(&mut self, path: &str) -> Result<()> {
-        let open_flags = OpenFlags::from_str("w").unwrap();
-        self.generic_open(EXT4_ROOT_INO, path, FileType::Directory, open_flags)
-            .map(|_| {
-                info!("ext4_dir_mk: {} ok", path);
-            })
+    /// Remove a directory recursively.
+    fn remove_dir_recursive(&mut self, dir: &mut InodeRef) -> Result<()> {
+        let entries = self.dir_get_all_entries(dir)?;
+        for entry in entries {
+            if entry.compare_name(".") || entry.compare_name("..") {
+                continue;
+            }
+            let mut child = self.read_inode(entry.inode());
+            if child.inode.is_dir(&self.super_block) {
+                // Remove child dir recursively
+                self.remove_dir_recursive(&mut child)?;
+            } else {
+                // Remove file
+                self.generic_remove(
+                    dir.id,
+                    &entry.name().map_err(|_| {
+                        Ext4Error::with_message(ErrCode::EINVAL, "Invalid dir entry name")
+                    })?,
+                    Some(FileType::RegularFile),
+                )?;
+            }
+        }
+        Ok(())
     }
 }
