@@ -186,15 +186,22 @@ impl Ext4 {
         let file_name = &search_path.split_off(search_path.len() - 1)[0];
         let parent_path = search_path.join("/");
         // Get the parent directory inode
-        let parent_id = self.generic_open(
+        let parent_inode_id = self.generic_open(
             EXT4_ROOT_INO,
             &parent_path,
             FileType::Directory,
             OpenFlags::O_RDONLY,
         )?;
-        let mut parent_inode = self.read_inode(parent_id);
+        // Get the file inode, check the existence and type
+        let child_inode_id = self.generic_open(
+            parent_inode_id,
+            file_name,
+            FileType::RegularFile,
+            OpenFlags::O_RDONLY,
+        )?;
         // Remove the file from the parent directory
-        let child_inode_id = self.dir_remove_entry(&mut parent_inode, &file_name)?;
+        let mut parent_inode = self.read_inode(parent_inode_id);
+        self.dir_remove_entry(&mut parent_inode, &file_name)?;
         // Free the inode of the file
         self.free_inode(child_inode_id)
     }

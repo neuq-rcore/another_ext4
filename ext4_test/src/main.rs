@@ -112,6 +112,7 @@ fn remove_file_test(ext4: &mut Ext4) {
     ext4.open("d3/f1", "r", true).expect_err("open failed");
     ext4.remove_file("f1").expect("remove file failed");
     ext4.open("f1", "r", true).expect_err("open failed");
+    ext4.remove_file("d1/not_exist").expect_err("remove file failed");
 }
 
 fn main() {
