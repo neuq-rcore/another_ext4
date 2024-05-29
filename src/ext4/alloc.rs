@@ -5,19 +5,18 @@ use crate::prelude::*;
 
 impl Ext4 {
     /// Create a new inode, returning the inode and its number
-    pub(super) fn create_inode(&mut self, filetype: FileType) -> Result<InodeRef> {
+    pub(super) fn create_inode(&mut self, file_type: FileType) -> Result<InodeRef> {
         // Allocate an inode
-        let is_dir = filetype == FileType::Directory;
+        let is_dir = file_type == FileType::Directory;
         let id = self.alloc_inode(is_dir)?;
 
         // Initialize the inode
         let mut inode = Inode::default();
-        let mode = if filetype == FileType::Directory {
-            0o777 | EXT4_INODE_MODE_DIRECTORY
-        } else if filetype == FileType::SymLink {
-            0o777 | EXT4_INODE_MODE_SOFTLINK
-        } else {
-            0o666 | file_type2inode_mode(filetype)
+        let mode = match file_type {
+            FileType::SymLink | FileType::Directory => {
+                InodeMode::from_type_and_perm(file_type, InodeMode::ALL_RWX)
+            }
+            _ => InodeMode::from_type_and_perm(file_type, InodeMode::ALL_RW),
         };
         inode.set_mode(mode);
         inode.extent_init();
@@ -36,7 +35,10 @@ impl Ext4 {
     /// Create(initialize) the root inode of the file system
     pub(super) fn create_root_inode(&mut self) -> Result<InodeRef> {
         let mut inode = Inode::default();
-        inode.set_mode(0o777 | EXT4_INODE_MODE_DIRECTORY);
+        inode.set_mode(InodeMode::from_type_and_perm(
+            FileType::Directory,
+            InodeMode::ALL_RWX,
+        ));
         inode.extent_init();
         if self.super_block.inode_size() > EXT4_GOOD_OLD_INODE_SIZE {
             inode.set_extra_isize(self.super_block.extra_size());
@@ -108,8 +110,10 @@ impl Ext4 {
         // Find the first free block
         let fblock = bitmap
             .find_and_set_first_clear_bit(0, 8 * BLOCK_SIZE)
-            .ok_or(Ext4Error::with_message(ErrCode::ENOSPC, "No free block"))?
-            as PBlockId;
+            .ok_or(Ext4Error::with_message(
+                ErrCode::ENOSPC,
+                "No free block".to_owned(),
+            ))? as PBlockId;
 
         // Set block group checksum
         bg.desc.set_block_bitmap_csum(&self.super_block, &bitmap);
@@ -157,7 +161,7 @@ impl Ext4 {
         if bitmap.is_bit_clear(pblock as usize) {
             return Err(Ext4Error::with_message(
                 ErrCode::EINVAL,
-                "Block double free",
+                "Block double free".to_owned(),
             ));
         }
         bitmap.clear_bit(pblock as usize);
@@ -207,10 +211,9 @@ impl Ext4 {
             let mut bitmap = Bitmap::new(&mut bitmap_block.data[..inode_count / 8]);
 
             // Find a free inode
-            let idx_in_bg = bitmap
-                .find_and_set_first_clear_bit(0, inode_count)
-                .ok_or(Ext4Error::with_message(ErrCode::ENOSPC, "No free inode"))?
-                as u32;
+            let idx_in_bg = bitmap.find_and_set_first_clear_bit(0, inode_count).ok_or(
+                Ext4Error::with_message(ErrCode::ENOSPC, "No free inode".to_owned()),
+            )? as u32;
 
             // Update bitmap in disk
             bg.desc.set_inode_bitmap_csum(&self.super_block, &bitmap);
@@ -271,7 +274,7 @@ impl Ext4 {
         if bitmap.is_bit_clear(idx_in_bg as usize) {
             return Err(Ext4Error::with_message(
                 ErrCode::EINVAL,
-                "Inode double free",
+                "Inode double free".to_owned(),
             ));
         }
         bitmap.clear_bit(idx_in_bg as usize);
@@ -286,7 +289,7 @@ impl Ext4 {
             .set_free_inodes_count(&self.super_block, free_inodes);
 
         // Increase used directories counter
-        if inode_ref.inode.is_dir(&self.super_block) {
+        if inode_ref.inode.is_dir() {
             let used_dirs = bg.desc.used_dirs_count(&self.super_block) - 1;
             bg.desc.set_used_dirs_count(&self.super_block, used_dirs);
         }

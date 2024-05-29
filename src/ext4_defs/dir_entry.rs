@@ -4,11 +4,11 @@
 //! linear array of directory entries.
 
 use super::crc::*;
+use super::FileType;
 use super::SuperBlock;
 use crate::constants::*;
 use crate::prelude::*;
 use crate::AsBytes;
-use alloc::string::FromUtf8Error;
 
 #[repr(C)]
 pub union DirEnInner {
@@ -18,13 +18,7 @@ pub union DirEnInner {
 
 impl Debug for DirEnInner {
     fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
-        unsafe {
-            write!(
-                f,
-                "Ext4DirEnInternal {{ name_length_high: {:?} }}",
-                self.name_length_high
-            )
-        }
+        unsafe { write!(f, "inode_type: {:?}", self.inode_type) }
     }
 }
 
@@ -105,10 +99,10 @@ impl DirEntry {
         }
     }
 
-    pub fn name(&self) -> core::result::Result<String, FromUtf8Error> {
+    pub fn name(&self) -> Result<String> {
         let name_len = self.name_len as usize;
         let name = &self.name[..name_len];
-        String::from_utf8(name.to_vec())
+        String::from_utf8(name.to_vec()).map_err(|e| e.into())
     }
 
     pub fn compare_name(&self, name: &str) -> bool {
@@ -147,9 +141,9 @@ impl DirEntry {
         self.inode = 0
     }
 
-    /// Set the dir entry's inode type given the corresponding inode mode
-    pub fn set_entry_type(&mut self, inode_mode: u16) {
-        self.inner.inode_type = inode_mode2file_type(inode_mode);
+    /// Set the dir entry's file type
+    pub fn set_type(&mut self, file_type: FileType) {
+        self.inner.inode_type = file_type;
     }
 
     /// Get the required size to save a directory entry, 4-byte aligned
@@ -181,8 +175,8 @@ impl DirEntry {
     }
 }
 
-#[repr(C)]
 #[derive(Debug, Clone, Copy, Default)]
+#[repr(C)]
 pub struct DirEntryTail {
     pub reserved_zero1: u32,
     pub rec_len: u16,
@@ -209,42 +203,3 @@ pub struct FakeDirEntry {
 }
 
 impl AsBytes for FakeDirEntry {}
-
-#[derive(PartialEq, Eq, Clone, Copy, Debug)]
-#[repr(u8)]
-pub enum FileType {
-    Unknown,
-    RegularFile,
-    Directory,
-    CharacterDev,
-    BlockDev,
-    Fifo,
-    Socket,
-    SymLink,
-}
-
-pub fn inode_mode2file_type(inode_mode: u16) -> FileType {
-    match inode_mode & EXT4_INODE_MODE_TYPE_MASK {
-        EXT4_INODE_MODE_FILE => FileType::RegularFile,
-        EXT4_INODE_MODE_DIRECTORY => FileType::Directory,
-        EXT4_INODE_MODE_CHARDEV => FileType::CharacterDev,
-        EXT4_INODE_MODE_BLOCKDEV => FileType::BlockDev,
-        EXT4_INODE_MODE_FIFO => FileType::Fifo,
-        EXT4_INODE_MODE_SOCKET => FileType::Socket,
-        EXT4_INODE_MODE_SOFTLINK => FileType::SymLink,
-        _ => FileType::Unknown,
-    }
-}
-
-pub fn file_type2inode_mode(dirent_type: FileType) -> u16 {
-    match dirent_type {
-        FileType::RegularFile => EXT4_INODE_MODE_FILE,
-        FileType::Directory => EXT4_INODE_MODE_DIRECTORY,
-        FileType::SymLink => EXT4_INODE_MODE_SOFTLINK,
-        FileType::CharacterDev => EXT4_INODE_MODE_CHARDEV,
-        FileType::BlockDev => EXT4_INODE_MODE_BLOCKDEV,
-        FileType::Fifo => EXT4_INODE_MODE_FIFO,
-        FileType::Socket => EXT4_INODE_MODE_SOCKET,
-        _ => EXT4_INODE_MODE_FILE,
-    }
-}

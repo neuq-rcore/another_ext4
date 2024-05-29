@@ -2,7 +2,7 @@ use super::Ext4;
 use crate::constants::*;
 use crate::ext4_defs::*;
 use crate::prelude::*;
-use crate::return_errno_with_message;
+use crate::return_err_with_msg;
 use core::cmp::min;
 
 impl Ext4 {
@@ -39,7 +39,7 @@ impl Ext4 {
         file.fsize = inode_ref.inode.size();
 
         // Check if the file is a softlink
-        if inode_ref.inode.is_softlink(&self.super_block) {
+        if inode_ref.inode.is_softlink() {
             // TODO: read softlink
             log::debug!("ext4_read unsupported softlink");
         }
@@ -131,7 +131,7 @@ impl Ext4 {
     /// * `expect_type` - The expect type of object to open, optional. If this
     ///    parameter is provided, the function will check the type of the object
     ///    to open.
-    pub(super) fn generic_open(
+    pub fn generic_open(
         &mut self,
         root: InodeId,
         path: &str,
@@ -152,12 +152,12 @@ impl Ext4 {
                 Err(e) => {
                     if e.code() != ErrCode::ENOENT {
                         // dir search failed with error other than ENOENT
-                        return_errno_with_message!(ErrCode::ENOTSUP, "dir search failed");
+                        return_err_with_msg!(ErrCode::ENOTSUP, "dir search failed".to_owned());
                     }
                     if !flags.contains(OpenFlags::O_CREAT) || expect_type.is_none() {
                         // `O_CREAT` and `expect_type` must be provided together to
                         // create a new object
-                        return_errno_with_message!(ErrCode::ENOENT, "file not found");
+                        return_err_with_msg!(ErrCode::ENOENT, "file not found".to_owned());
                     }
                     // Create file/directory
                     let mut child = if i == search_path.len() - 1 {
@@ -166,8 +166,9 @@ impl Ext4 {
                         self.create_inode(FileType::Directory)
                     }?;
                     // Link the new inode
-                    self.link(&mut cur, &mut child, path)
-                        .map_err(|_| Ext4Error::with_message(ErrCode::ELINKFAIL, "link fail"))?;
+                    self.link(&mut cur, &mut child, path).map_err(|_| {
+                        Ext4Error::with_message(ErrCode::ELINKFAIL, "link fail".to_owned())
+                    })?;
                     // Write back parent and child
                     self.write_inode_with_csum(&mut cur);
                     self.write_inode_with_csum(&mut child);
@@ -178,8 +179,8 @@ impl Ext4 {
         }
         // `cur` is the target inode, check type if `expect_type` os provided
         if let Some(expect_type) = expect_type {
-            if inode_mode2file_type(cur.inode.mode()) != expect_type {
-                return_errno_with_message!(ErrCode::EISDIR, "inode type mismatch");
+            if cur.inode.file_type() != expect_type {
+                return_err_with_msg!(ErrCode::EISDIR, "inode type mismatch".to_owned());
             }
         }
         Ok(cur)

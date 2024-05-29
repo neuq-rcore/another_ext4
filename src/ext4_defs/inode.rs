@@ -15,6 +15,71 @@ use super::SuperBlock;
 use super::{ExtentNode, ExtentNodeMut};
 use crate::constants::*;
 use crate::prelude::*;
+use crate::FileType;
+
+bitflags! {
+    #[derive(PartialEq, Debug, Clone, Copy)]
+    pub struct InodeMode: u16 {
+        // Premission
+        const PERM_MASK = 0xFFF;
+        const USER_READ = 0x100;
+        const USER_WRITE = 0x80;
+        const USER_EXEC = 0x40;
+        const GROUP_READ = 0x20;
+        const GROUP_WRITE = 0x10;
+        const GROUP_EXEC = 0x8;
+        const OTHER_READ = 0x4;
+        const OTHER_WRITE = 0x2;
+        const OTHER_EXEC = 0x1;
+        // File type
+        const TYPE_MASK = 0xF000;
+        const FIFO = 0x1000;
+        const CHARDEV = 0x2000;
+        const DIRECTORY = 0x4000;
+        const BLOCKDEV = 0x6000;
+        const FILE = 0x8000;
+        const SOFTLINK = 0xA000;
+        const SOCKET = 0xC000;
+    }
+}
+
+impl InodeMode {
+    /// Enable read, write, and execute for all users.
+    pub const ALL_RWX: InodeMode = InodeMode::from_bits_retain(0o777);
+    /// Enable read and write for all users.
+    pub const ALL_RW: InodeMode = InodeMode::from_bits_retain(0o666);
+
+    /// Set an inode mode from a file type and permission bits.
+    pub fn from_type_and_perm(file_type: FileType, perm: InodeMode) -> Self {
+        (match file_type {
+            FileType::RegularFile => InodeMode::FILE,
+            FileType::Directory => InodeMode::DIRECTORY,
+            FileType::CharacterDev => InodeMode::CHARDEV,
+            FileType::BlockDev => InodeMode::BLOCKDEV,
+            FileType::Fifo => InodeMode::FIFO,
+            FileType::Socket => InodeMode::SOCKET,
+            FileType::SymLink => InodeMode::SOFTLINK,
+            _ => InodeMode::FILE,
+        }) | (perm & InodeMode::PERM_MASK)
+    }
+    /// Get permission bits of an inode mode.
+    pub fn perm(&self) -> u16 {
+        (*self & InodeMode::PERM_MASK).bits() as u16
+    }
+    /// Get the file type of an inode mode.
+    pub fn file_type(&self) -> FileType {
+        match *self & InodeMode::TYPE_MASK {
+            InodeMode::CHARDEV => FileType::CharacterDev,
+            InodeMode::DIRECTORY => FileType::Directory,
+            InodeMode::BLOCKDEV => FileType::BlockDev,
+            InodeMode::FILE => FileType::RegularFile,
+            InodeMode::FIFO => FileType::Fifo,
+            InodeMode::SOCKET => FileType::Socket,
+            InodeMode::SOFTLINK => FileType::SymLink,
+            _ => FileType::Unknown,
+        }
+    }
+}
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -81,30 +146,28 @@ impl Inode {
         self.flags |= f;
     }
 
-    pub fn mode(&self) -> u16 {
-        self.mode
+    pub fn mode(&self) -> InodeMode {
+        InodeMode::from_bits_truncate(self.mode)
     }
 
-    pub fn set_mode(&mut self, mode: u16) {
-        self.mode |= mode;
+    pub fn set_mode(&mut self, mode: InodeMode) {
+        self.mode = mode.bits();
     }
 
-    pub fn inode_type(&self, super_block: &SuperBlock) -> u32 {
-        let mut v = self.mode;
-
-        if super_block.creator_os() == EXT4_SUPERBLOCK_OS_HURD {
-            v |= ((self.osd2.l_i_file_acl_high as u32) << 16) as u16;
-        }
-
-        (v & EXT4_INODE_MODE_TYPE_MASK) as u32
+    pub fn file_type(&self) -> FileType {
+        self.mode().file_type()
     }
 
-    pub fn is_dir(&self, super_block: &SuperBlock) -> bool {
-        self.inode_type(super_block) == EXT4_INODE_MODE_DIRECTORY as u32
+    pub fn is_file(&self) -> bool {
+        self.file_type() == FileType::RegularFile
     }
 
-    pub fn is_softlink(&self, super_block: &SuperBlock) -> bool {
-        self.inode_type(super_block) == EXT4_INODE_MODE_SOFTLINK as u32
+    pub fn is_dir(&self) -> bool {
+        self.file_type() == FileType::Directory
+    }
+
+    pub fn is_softlink(&self) -> bool {
+        self.file_type() == FileType::SymLink
     }
 
     pub fn links_cnt(&self) -> u16 {

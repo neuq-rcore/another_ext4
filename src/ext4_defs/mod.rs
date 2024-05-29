@@ -34,3 +34,17 @@ pub use file::*;
 pub use inode::*;
 pub use mount_point::*;
 pub use super_block::*;
+
+/// All file types. Also matches the defination in directory entries.
+#[derive(PartialEq, Eq, Clone, Copy, Debug)]
+#[repr(u8)]
+pub enum FileType {
+    Unknown,
+    RegularFile,
+    Directory,
+    CharacterDev,
+    BlockDev,
+    Fifo,
+    Socket,
+    SymLink,
+}

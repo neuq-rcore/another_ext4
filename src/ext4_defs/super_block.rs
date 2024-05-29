@@ -5,7 +5,6 @@
 //! See [`super::block_group`] for details.
 
 use super::BlockDevice;
-use super::Inode;
 use crate::constants::*;
 use crate::prelude::*;
 use crate::AsBytes;
@@ -173,24 +172,6 @@ impl SuperBlock {
     /// Returns the size of inode structure.
     pub fn inode_size(&self) -> u16 {
         self.inode_size
-    }
-
-    /// Returns the size of inode structure.
-    pub fn inode_size_file(&self, inode: &Inode) -> u64 {
-        let mode = inode.mode;
-
-        // 获取inode的低32位大小
-        let mut v = inode.size as u64;
-        // 如果文件系统的版本号大于0，并且inode的类型是文件
-        if self.rev_level > 0 && (mode & EXT4_INODE_MODE_TYPE_MASK) == EXT4_INODE_MODE_FILE as u16 {
-            // 获取inode的高32位大小，并左移32位
-            let hi = (inode.size_hi as u64) << 32;
-            // 用或运算符将低32位和高32位拼接为一个u64值
-            v |= hi;
-        }
-
-        // 返回inode的大小
-        v
     }
 
     pub fn uuid(&self) -> [u8; 16] {

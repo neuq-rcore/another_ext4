@@ -1,4 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
+extern crate alloc;
+
+use crate::prelude::*;
 
 /// Ext4Error number.
 #[repr(i32)]
@@ -30,11 +33,19 @@ pub enum ErrCode {
 }
 
 /// error used in this crate
-#[derive(Debug, Clone, Copy)]
 pub struct Ext4Error {
     errno: ErrCode,
-    #[allow(unused)]
-    msg: Option<&'static str>,
+    msg: Option<String>,
+}
+
+impl Debug for Ext4Error {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        if let Some(msg) = &self.msg {
+            write!(f, "Ext4Error {{ errno: {:?}, msg: {:?} }}", self.errno, msg)
+        } else {
+            write!(f, "Ext4Error {{ errno: {:?} }}", self.errno)
+        }
+    }
 }
 
 impl Ext4Error {
@@ -42,7 +53,7 @@ impl Ext4Error {
         Ext4Error { errno, msg: None }
     }
 
-    pub const fn with_message(errno: ErrCode, msg: &'static str) -> Self {
+    pub const fn with_message(errno: ErrCode, msg: String) -> Self {
         Ext4Error {
             errno,
             msg: Some(msg),
@@ -62,43 +73,43 @@ impl From<ErrCode> for Ext4Error {
 
 impl From<core::str::Utf8Error> for Ext4Error {
     fn from(_: core::str::Utf8Error) -> Self {
-        Ext4Error::with_message(ErrCode::EINVAL, "Invalid utf-8 string")
+        Ext4Error::with_message(ErrCode::EINVAL, "Invalid utf-8 string".to_owned())
     }
 }
 
 impl From<alloc::string::FromUtf8Error> for Ext4Error {
     fn from(_: alloc::string::FromUtf8Error) -> Self {
-        Ext4Error::with_message(ErrCode::EINVAL, "Invalid utf-8 string")
+        Ext4Error::with_message(ErrCode::EINVAL, "Invalid utf-8 string".to_owned())
     }
 }
 
 impl From<core::ffi::FromBytesUntilNulError> for Ext4Error {
     fn from(_: core::ffi::FromBytesUntilNulError) -> Self {
-        Ext4Error::with_message(ErrCode::E2BIG, "Cannot find null in cstring")
+        Ext4Error::with_message(ErrCode::E2BIG, "Cannot find null in cstring".to_owned())
     }
 }
 
 impl From<core::ffi::FromBytesWithNulError> for Ext4Error {
     fn from(_: core::ffi::FromBytesWithNulError) -> Self {
-        Ext4Error::with_message(ErrCode::E2BIG, "Cannot find null in cstring")
+        Ext4Error::with_message(ErrCode::E2BIG, "Cannot find null in cstring".to_owned())
     }
 }
 
 impl From<alloc::ffi::NulError> for Ext4Error {
     fn from(_: alloc::ffi::NulError) -> Self {
-        Ext4Error::with_message(ErrCode::E2BIG, "Cannot find null in cstring")
+        Ext4Error::with_message(ErrCode::E2BIG, "Cannot find null in cstring".to_owned())
     }
 }
 
 #[macro_export]
-macro_rules! return_errno {
+macro_rules! return_err {
     ($errno: expr) => {
-        return Err($crate::error::Ext4Error::new($errno))
+        return Err(Ext4Error::new($errno))
     };
 }
 
 #[macro_export]
-macro_rules! return_errno_with_message {
+macro_rules! return_err_with_msg {
     ($errno: expr, $message: expr) => {
         return Err(Ext4Error::with_message($errno, $message))
     };

@@ -13,7 +13,7 @@ impl Ext4 {
         let _r = self.dir_add_entry(parent, child, name);
         child.inode.links_count += 1;
 
-        if child.inode.is_dir(&self.super_block) {
+        if child.inode.is_dir() {
             // add '.' and '..' entries
             let child_self = child.clone();
             self.dir_add_entry(child, &child_self, ".")?;

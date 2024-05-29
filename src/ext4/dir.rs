@@ -187,12 +187,7 @@ impl Ext4 {
     fn insert_entry_to_new_block(&self, dst_blk: &mut Block, child: &InodeRef, name: &str) {
         // Set the entry
         let rec_len = BLOCK_SIZE - size_of::<DirEntryTail>();
-        let new_entry = DirEntry::new(
-            child.id,
-            rec_len as u16,
-            name,
-            inode_mode2file_type(child.inode.mode()),
-        );
+        let new_entry = DirEntry::new(child.id, rec_len as u16, name, child.inode.file_type());
         // Write entry to block
         dst_blk.write_offset_as(0, &new_entry);
 
@@ -236,12 +231,8 @@ impl Ext4 {
             de.set_rec_len(used_size as u16);
             dst_blk.write_offset_as(offset, &de);
             // Insert the new entry
-            let new_entry = DirEntry::new(
-                child.id,
-                free_size as u16,
-                name,
-                inode_mode2file_type(child.inode.mode()),
-            );
+            let new_entry =
+                DirEntry::new(child.id, free_size as u16, name, child.inode.file_type());
             dst_blk.write_offset_as(offset + used_size, &new_entry);
 
             // Set tail csum
@@ -266,7 +257,7 @@ impl Ext4 {
                 continue;
             }
             let mut child = self.read_inode(entry.inode());
-            if child.inode.is_dir(&self.super_block) {
+            if child.inode.is_dir() {
                 // Remove child dir recursively
                 self.remove_dir_recursive(&mut child)?;
             } else {
@@ -274,7 +265,10 @@ impl Ext4 {
                 self.generic_remove(
                     dir.id,
                     &entry.name().map_err(|_| {
-                        Ext4Error::with_message(ErrCode::EINVAL, "Invalid dir entry name")
+                        Ext4Error::with_message(
+                            ErrCode::EINVAL,
+                            "Invalid dir entry name".to_owned(),
+                        )
                     })?,
                     Some(FileType::RegularFile),
                 )?;

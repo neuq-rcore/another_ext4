@@ -26,7 +26,7 @@ pub(crate) use core::ptr;
 
 pub(crate) use log::{debug, info, trace, warn};
 
-pub(crate) use crate::ext4_error::*;
+pub(crate) use crate::error::*;
 pub(crate) type Result<T> = core::result::Result<T, Ext4Error>;
 
 pub(crate) type LBlockId = u32;
