@@ -1,0 +1,10 @@
+[package]
+name = "ext4_fuse"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+fuser = "0.13"
+ext4_rs = { path = ".." }
+simple_logger = "4.3"
+log = "0.4"

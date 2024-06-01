@@ -1,44 +1,11 @@
-use ext4_rs::{Block, BlockDevice, Ext4, BLOCK_SIZE};
+use ext4_rs::{Ext4, InodeMode, OpenFlags, EXT4_ROOT_INO};
 use simple_logger::SimpleLogger;
-use std::fs::{File, OpenOptions};
-use std::io::{Read, Seek, SeekFrom, Write};
 use std::sync::Arc;
+use block_file::BlockFile;
 
-#[derive(Debug)]
-pub struct BlockFile(File);
+mod block_file;
 
-impl BlockFile {
-    pub fn new(path: &str) -> Self {
-        let file = OpenOptions::new()
-            .read(true)
-            .write(true)
-            .open(path)
-            .unwrap();
-        Self(file)
-    }
-}
-
-impl BlockDevice for BlockFile {
-    fn read_block(&self, block_id: u64) -> Block {
-        let mut file = &self.0;
-        let mut buffer = [0u8; BLOCK_SIZE];
-        // warn!("read_block {}", block_id);
-        let _r = file.seek(SeekFrom::Start(block_id * BLOCK_SIZE as u64));
-        let _r = file.read_exact(&mut buffer);
-        Block::new(block_id, buffer)
-    }
-
-    fn write_block(&self, block: &Block) {
-        let mut file = &self.0;
-        // warn!("write_block {}", block.block_id);
-        let _r = file.seek(SeekFrom::Start(block.block_id * BLOCK_SIZE as u64));
-        let _r = file.write_all(&block.data);
-    }
-}
-
-fn logger_init() {
-    SimpleLogger::new().init().unwrap();
-}
+const ROOT_INO: u32 = EXT4_ROOT_INO;
 
 fn make_ext4() {
     let _ = std::process::Command::new("rm")
@@ -59,68 +26,101 @@ fn open_ext4() -> Ext4 {
 }
 
 fn mkdir_test(ext4: &mut Ext4) {
-    ext4.make_dir("d1").expect("mkdir failed");
-    ext4.make_dir("d1/d2").expect("mkdir failed");
-    ext4.make_dir("d1/d2/d3").expect("mkdir failed");
-    ext4.make_dir("d1/d2/d3/d4").expect("mkdir failed");
-    ext4.make_dir("d2").expect("mkdir failed");
-    ext4.make_dir("d2/d3").expect("mkdir failed");
-    ext4.make_dir("d2/d3/d4").expect("mkdir failed");
-    ext4.make_dir("d3").expect("mkdir failed");
+    let dir_mode: InodeMode = InodeMode::DIRECTORY | InodeMode::ALL_RWX;
+    ext4.generic_create(ROOT_INO, "d1", dir_mode)
+        .expect("mkdir failed");
+    ext4.generic_create(ROOT_INO, "d1/d2", dir_mode)
+        .expect("mkdir failed");
+    ext4.generic_create(ROOT_INO, "d1/d2/d3", dir_mode)
+        .expect("mkdir failed");
+    ext4.generic_create(ROOT_INO, "d1/d2/d3/d4", dir_mode)
+        .expect("mkdir failed");
+    ext4.generic_create(ROOT_INO, "d2", dir_mode)
+        .expect("mkdir failed");
+    ext4.generic_create(ROOT_INO, "d2/d3", dir_mode)
+        .expect("mkdir failed");
+    ext4.generic_create(ROOT_INO, "d2/d3/d4", dir_mode)
+        .expect("mkdir failed");
+    ext4.generic_create(ROOT_INO, "d3", dir_mode)
+        .expect("mkdir failed");
 }
 
-fn open_test(ext4: &mut Ext4) {
-    ext4.open_file("d1/d2/d3/d4/f1", "w+").expect("open failed");
-    ext4.open_file("d1/d2/d3/d4/f1", "r").expect("open failed");
-    ext4.open_file("d1/d2/d3/d4/f5", "a").expect("open failed");
-    ext4.open_file("d2/f4", "w+").expect("open failed");
-    ext4.open_file("f1", "w+").expect("open failed");
+fn create_test(ext4: &mut Ext4) {
+    let file_mode: InodeMode = InodeMode::FILE | InodeMode::ALL_RWX;
+    ext4.generic_create(ROOT_INO, "d1/d2/d3/d4/f1", file_mode)
+        .expect("open failed");
+    ext4.generic_create(ROOT_INO, "d3/f0", file_mode)
+        .expect("open failed");
+    ext4.generic_create(ROOT_INO, "d3/f1", file_mode)
+        .expect("open failed");
+    ext4.generic_create(ROOT_INO, "f1", file_mode)
+        .expect("open failed");
 }
 
 fn read_write_test(ext4: &mut Ext4) {
     let wbuffer = "hello world".as_bytes();
-    let mut wfile = ext4.open_file("d3/f0", "w+").expect("open failed");
-    ext4.write_file(&mut wfile, wbuffer).expect("write failed");
+    let wfile = ext4
+        .generic_open(ROOT_INO, "d3/f0", OpenFlags::O_WRONLY)
+        .expect("open failed");
+    ext4.write(wfile.inode, 0, wbuffer).expect("write failed");
 
     let mut rbuffer = vec![0u8; wbuffer.len()];
-    let mut rfile = ext4.open_file("d3/f0", "r").expect("open failed");
-    ext4.read_file(&mut rfile, &mut rbuffer)
-        .expect("read failed");
+    let rfile = ext4
+        .generic_open(ROOT_INO, "d3/f0", OpenFlags::O_RDONLY)
+        .expect("open failed");
+    ext4.read(wfile.inode, 0, &mut rbuffer).expect("read failed");
 
     assert_eq!(wbuffer, rbuffer);
 }
 
 fn large_read_write_test(ext4: &mut Ext4) {
     let wbuffer = vec![99u8; 1024 * 1024 * 16];
-    let mut wfile = ext4.open_file("d3/f1", "w+").expect("open failed");
-    ext4.write_file(&mut wfile, &wbuffer).expect("write failed");
+    let wfile = ext4
+        .generic_open(ROOT_INO, "d3/f1", OpenFlags::O_WRONLY)
+        .expect("open failed");
+    ext4.write(wfile.inode, 0, &wbuffer).expect("write failed");
 
-    let mut rfile = ext4.open_file("d3/f1", "r").expect("open failed");
+    let rfile = ext4
+        .generic_open(ROOT_INO, "d3/f1", OpenFlags::O_RDONLY)
+        .expect("open failed");
     let mut rbuffer = vec![0u8; wbuffer.len()];
-    ext4.read_file(&mut rfile, &mut rbuffer)
-        .expect("read failed");
+    ext4.read(rfile.inode, 0,&mut rbuffer).expect("read failed");
 
     assert_eq!(wbuffer, rbuffer);
 }
 
 fn remove_file_test(ext4: &mut Ext4) {
-    ext4.remove_file("d3/f0").expect("remove file failed");
-    ext4.open_file("d3/f0", "r").expect_err("open failed");
-    ext4.remove_file("d3/f1").expect("remove file failed");
-    ext4.open_file("d3/f1", "r").expect_err("open failed");
-    ext4.remove_file("f1").expect("remove file failed");
-    ext4.open_file("f1", "r").expect_err("open failed");
-    ext4.remove_file("d1/not_exist")
+    ext4.generic_remove(ROOT_INO, "d3/f0")
+        .expect("remove file failed");
+    ext4.generic_lookup(ROOT_INO, "d3/f0")
+        .expect_err("file not removed");
+    ext4.generic_remove(ROOT_INO, "d3/f1")
+        .expect("remove file failed");
+    ext4.generic_lookup(ROOT_INO, "d3/f1")
+        .expect_err("file not removed");
+    ext4.generic_remove(ROOT_INO, "f1")
+        .expect("remove file failed");
+    ext4.generic_lookup(ROOT_INO, "f1")
+        .expect_err("file not removed");
+    ext4.generic_remove(ROOT_INO, "d1/not_exist")
         .expect_err("remove file failed");
 }
 
 fn remove_dir_test(ext4: &mut Ext4) {
-    ext4.remove_dir("d2").expect("remove dir failed");
-    ext4.open_file("d2/f4", "r").expect_err("open failed");
+    ext4.generic_remove(ROOT_INO, "d2")
+        .expect_err("remove unempty dir");
+    ext4.generic_create(ROOT_INO, "dtmp", InodeMode::DIRECTORY | InodeMode::ALL_RWX)
+        .expect("mkdir failed");
+    ext4.generic_lookup(ROOT_INO, "dtmp")
+        .expect("dir not created");
+    ext4.generic_remove(ROOT_INO, "dtmp")
+        .expect("remove file failed");
+    ext4.generic_lookup(ROOT_INO, "dtmp")
+        .expect_err("dir not removed");
 }
 
 fn main() {
-    logger_init();
+    SimpleLogger::new().init().unwrap();
     log::set_max_level(log::LevelFilter::Off);
     make_ext4();
     println!("ext4.img created");
@@ -128,15 +128,14 @@ fn main() {
     println!("ext4 opened");
     mkdir_test(&mut ext4);
     println!("mkdir test done");
-    open_test(&mut ext4);
-    println!("open test done");
+    create_test(&mut ext4);
+    println!("create test done");
     read_write_test(&mut ext4);
     println!("read write test done");
     large_read_write_test(&mut ext4);
     println!("large read write test done");
     remove_file_test(&mut ext4);
     println!("remove file test done");
-    log::set_max_level(log::LevelFilter::Debug);
     remove_dir_test(&mut ext4);
     println!("remove dir test done");
 }
