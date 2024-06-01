@@ -32,7 +32,6 @@ pub use dir_entry::*;
 pub use extent::*;
 pub use file::*;
 pub use inode::*;
-pub use mount_point::*;
 pub use super_block::*;
 
 /// All file types. Also matches the defination in directory entries.

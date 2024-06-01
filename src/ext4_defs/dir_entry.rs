@@ -8,7 +8,7 @@ use super::FileType;
 use super::SuperBlock;
 use crate::constants::*;
 use crate::prelude::*;
-use crate::AsBytes;
+use super::AsBytes;
 
 #[repr(C)]
 #[derive(Clone, Copy)]

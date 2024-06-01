@@ -13,10 +13,6 @@ impl<'a> Bitmap<'a> {
         self.0[bit / 8] & (1 << (bit % 8)) == 0
     }
 
-    pub fn is_bit_set(&self, bit: usize) -> bool {
-        !self.is_bit_clear(bit)
-    }
-
     pub fn set_bit(&mut self, bit: usize) {
         self.0[bit / 8] |= 1 << (bit % 8);
     }

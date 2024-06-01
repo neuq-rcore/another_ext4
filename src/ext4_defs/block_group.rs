@@ -13,7 +13,7 @@ use super::BlockDevice;
 use super::SuperBlock;
 use crate::constants::*;
 use crate::prelude::*;
-use crate::AsBytes;
+use super::AsBytes;
 
 #[derive(Debug, Default, Clone, Copy)]
 #[repr(C, packed)]

@@ -118,7 +118,6 @@ impl Ext4 {
         let mut offset = 0;
         while offset < BLOCK_SIZE {
             let de: DirEntry = block.read_offset_as(offset);
-            debug!("Dir entry: {} {:?}", de.rec_len(), de.name());
             if !de.unused() && de.compare_name(name) {
                 return Ok(de);
             }
