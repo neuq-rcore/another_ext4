@@ -63,7 +63,7 @@ impl InodeMode {
         }) | (perm & InodeMode::PERM_MASK)
     }
     /// Get permission bits of an inode mode.
-    pub fn perm(&self) -> u16 {
+    pub fn perm_bits(&self) -> u16 {
         (*self & InodeMode::PERM_MASK).bits() as u16
     }
     /// Get the file type of an inode mode.
@@ -286,7 +286,7 @@ impl InodeRef {
         let block = block_device.read_block(block_id);
         Self {
             id,
-            inode: Inode::from_bytes(block.read_offset(offset, size_of::<Inode>())),
+            inode: block.read_offset_as(offset),
         }
     }
 

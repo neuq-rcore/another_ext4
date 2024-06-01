@@ -4,30 +4,6 @@ use crate::ext4_defs::*;
 use crate::prelude::*;
 
 impl Ext4 {
-    /// Create a new directory. `path` is the absolute path of the new directory.
-    pub fn make_dir(&mut self, path: &str) -> Result<()> {
-        self.generic_open(
-            EXT4_ROOT_INO,
-            path,
-            OpenFlags::O_CREAT,
-            Some(FileType::Directory),
-        )
-        .map(|_| {
-            info!("ext4_dir_mk: {} ok", path);
-        })
-    }
-
-    /// Remove a directory recursively. `path` is the absolute path of the directory.
-    pub fn remove_dir(&mut self, path: &str) -> Result<()> {
-        let mut dir = self.generic_open(
-            EXT4_ROOT_INO,
-            path,
-            OpenFlags::O_RDONLY,
-            Some(FileType::Directory),
-        )?;
-        self.remove_dir_recursive(&mut dir)
-    }
-
     /// Find a directory entry that matches a given name under a parent directory
     pub(super) fn dir_find_entry(&self, dir: &InodeRef, name: &str) -> Result<DirEntry> {
         info!("Dir find entry: dir {}, name {}", dir.id, name);
@@ -117,7 +93,7 @@ impl Ext4 {
     }
 
     /// Get all entries under a directory
-    pub(super) fn dir_get_all_entries(&self, dir: &mut InodeRef) -> Result<Vec<DirEntry>> {
+    pub(super) fn dir_get_all_entries(&self, dir: &InodeRef) -> Result<Vec<DirEntry>> {
         info!("Dir get all entries: dir {}", dir.id);
         let inode_size: u32 = dir.inode.size;
         let total_blocks: u32 = inode_size / BLOCK_SIZE as u32;
@@ -247,33 +223,5 @@ impl Ext4 {
             return true;
         }
         false
-    }
-
-    /// Remove a directory recursively.
-    fn remove_dir_recursive(&mut self, dir: &mut InodeRef) -> Result<()> {
-        let entries = self.dir_get_all_entries(dir)?;
-        for entry in entries {
-            if entry.compare_name(".") || entry.compare_name("..") {
-                continue;
-            }
-            let mut child = self.read_inode(entry.inode());
-            if child.inode.is_dir() {
-                // Remove child dir recursively
-                self.remove_dir_recursive(&mut child)?;
-            } else {
-                // Remove file
-                self.generic_remove(
-                    dir.id,
-                    &entry.name().map_err(|_| {
-                        Ext4Error::with_message(
-                            ErrCode::EINVAL,
-                            "Invalid dir entry name".to_owned(),
-                        )
-                    })?,
-                    Some(FileType::RegularFile),
-                )?;
-            }
-        }
-        Ok(())
     }
 }

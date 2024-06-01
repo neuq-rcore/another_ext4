@@ -5,19 +5,13 @@ use crate::prelude::*;
 
 impl Ext4 {
     /// Create a new inode, returning the inode and its number
-    pub(super) fn create_inode(&mut self, file_type: FileType) -> Result<InodeRef> {
+    pub(super) fn create_inode(&mut self, mode: InodeMode) -> Result<InodeRef> {
         // Allocate an inode
-        let is_dir = file_type == FileType::Directory;
+        let is_dir = mode.file_type() == FileType::Directory;
         let id = self.alloc_inode(is_dir)?;
 
         // Initialize the inode
         let mut inode = Inode::default();
-        let mode = match file_type {
-            FileType::SymLink | FileType::Directory => {
-                InodeMode::from_type_and_perm(file_type, InodeMode::ALL_RWX)
-            }
-            _ => InodeMode::from_type_and_perm(file_type, InodeMode::ALL_RW),
-        };
         inode.set_mode(mode);
         inode.extent_init();
         if self.super_block.inode_size() > EXT4_GOOD_OLD_INODE_SIZE {
@@ -110,7 +104,7 @@ impl Ext4 {
         // Find the first free block
         let fblock = bitmap
             .find_and_set_first_clear_bit(0, 8 * BLOCK_SIZE)
-            .ok_or(Ext4Error::with_message(
+            .ok_or(Ext4Error::with_msg(
                 ErrCode::ENOSPC,
                 "No free block".to_owned(),
             ))? as PBlockId;
@@ -159,7 +153,7 @@ impl Ext4 {
 
         // Free the block
         if bitmap.is_bit_clear(pblock as usize) {
-            return Err(Ext4Error::with_message(
+            return Err(Ext4Error::with_msg(
                 ErrCode::EINVAL,
                 "Block double free".to_owned(),
             ));
@@ -211,9 +205,13 @@ impl Ext4 {
             let mut bitmap = Bitmap::new(&mut bitmap_block.data[..inode_count / 8]);
 
             // Find a free inode
-            let idx_in_bg = bitmap.find_and_set_first_clear_bit(0, inode_count).ok_or(
-                Ext4Error::with_message(ErrCode::ENOSPC, "No free inode".to_owned()),
-            )? as u32;
+            let idx_in_bg =
+                bitmap
+                    .find_and_set_first_clear_bit(0, inode_count)
+                    .ok_or(Ext4Error::with_msg(
+                        ErrCode::ENOSPC,
+                        "No free inode".to_owned(),
+                    ))? as u32;
 
             // Update bitmap in disk
             bg.desc.set_inode_bitmap_csum(&self.super_block, &bitmap);
@@ -272,7 +270,7 @@ impl Ext4 {
 
         // Free the inode
         if bitmap.is_bit_clear(idx_in_bg as usize) {
-            return Err(Ext4Error::with_message(
+            return Err(Ext4Error::with_msg(
                 ErrCode::EINVAL,
                 "Inode double free".to_owned(),
             ));

@@ -11,6 +11,7 @@ use crate::prelude::*;
 use crate::AsBytes;
 
 #[repr(C)]
+#[derive(Clone, Copy)]
 pub union DirEnInner {
     pub name_length_high: u8, // 高8位的文件名长度
     pub inode_type: FileType, // 引用的inode的类型（在rev >= 0.5中）
@@ -31,7 +32,7 @@ impl Default for DirEnInner {
 }
 
 #[repr(C)]
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct DirEntry {
     inode: InodeId,    // 该目录项指向的inode的编号
     rec_len: u16,      // 到下一个目录项的距离

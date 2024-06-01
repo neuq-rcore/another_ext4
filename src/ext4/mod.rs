@@ -5,16 +5,16 @@ use crate::prelude::*;
 mod alloc;
 mod dir;
 mod extent;
-mod file;
-mod journal;
 mod link;
+mod journal;
 mod rw;
+mod low_level;
+mod high_level;
 
 #[derive(Debug)]
 pub struct Ext4 {
-    pub block_device: Arc<dyn BlockDevice>,
-    pub super_block: SuperBlock,
-    pub mount_point: MountPoint,
+    block_device: Arc<dyn BlockDevice>,
+    super_block: SuperBlock,
 }
 
 impl Ext4 {
@@ -27,13 +27,10 @@ impl Ext4 {
         // TODO: if the main superblock is corrupted, should we load the backup?
         let block = block_device.read_block(0);
         let super_block = block.read_offset_as::<SuperBlock>(BASE_OFFSET);
-        // Root mount point
-        let mount_point = MountPoint::new("/");
         // Create Ext4 instance
         let mut ext4 = Self {
             super_block,
             block_device,
-            mount_point,
         };
         // Create root directory
         ext4.create_root_inode()?;

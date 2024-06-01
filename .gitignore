@@ -2,3 +2,8 @@
 
 /ext4_test/target
 /ext4_test/ext4.img
+
+/ext4_fuse/target
+
+/.idea
+/.vscode

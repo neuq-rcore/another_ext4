@@ -53,10 +53,17 @@ impl Ext4Error {
         Ext4Error { errno, msg: None }
     }
 
-    pub const fn with_message(errno: ErrCode, msg: String) -> Self {
+    pub const fn with_msg(errno: ErrCode, msg: String) -> Self {
         Ext4Error {
             errno,
             msg: Some(msg),
+        }
+    }
+
+    pub fn with_msg_str(errno: ErrCode, msg: &str) -> Self {
+        Ext4Error {
+            errno,
+            msg: Some(msg.to_owned()),
         }
     }
 
@@ -73,31 +80,31 @@ impl From<ErrCode> for Ext4Error {
 
 impl From<core::str::Utf8Error> for Ext4Error {
     fn from(_: core::str::Utf8Error) -> Self {
-        Ext4Error::with_message(ErrCode::EINVAL, "Invalid utf-8 string".to_owned())
+        Ext4Error::with_msg(ErrCode::EINVAL, "Invalid utf-8 string".to_owned())
     }
 }
 
 impl From<alloc::string::FromUtf8Error> for Ext4Error {
     fn from(_: alloc::string::FromUtf8Error) -> Self {
-        Ext4Error::with_message(ErrCode::EINVAL, "Invalid utf-8 string".to_owned())
+        Ext4Error::with_msg(ErrCode::EINVAL, "Invalid utf-8 string".to_owned())
     }
 }
 
 impl From<core::ffi::FromBytesUntilNulError> for Ext4Error {
     fn from(_: core::ffi::FromBytesUntilNulError) -> Self {
-        Ext4Error::with_message(ErrCode::E2BIG, "Cannot find null in cstring".to_owned())
+        Ext4Error::with_msg(ErrCode::E2BIG, "Cannot find null in cstring".to_owned())
     }
 }
 
 impl From<core::ffi::FromBytesWithNulError> for Ext4Error {
     fn from(_: core::ffi::FromBytesWithNulError) -> Self {
-        Ext4Error::with_message(ErrCode::E2BIG, "Cannot find null in cstring".to_owned())
+        Ext4Error::with_msg(ErrCode::E2BIG, "Cannot find null in cstring".to_owned())
     }
 }
 
 impl From<alloc::ffi::NulError> for Ext4Error {
     fn from(_: alloc::ffi::NulError) -> Self {
-        Ext4Error::with_message(ErrCode::E2BIG, "Cannot find null in cstring".to_owned())
+        Ext4Error::with_msg(ErrCode::E2BIG, "Cannot find null in cstring".to_owned())
     }
 }
 
@@ -109,8 +116,8 @@ macro_rules! return_err {
 }
 
 #[macro_export]
-macro_rules! return_err_with_msg {
+macro_rules! return_err_with_msg_str {
     ($errno: expr, $message: expr) => {
-        return Err(Ext4Error::with_message($errno, $message))
+        return Err(Ext4Error::with_msg_str($errno, $message))
     };
 }

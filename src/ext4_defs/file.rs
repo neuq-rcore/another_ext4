@@ -1,25 +1,20 @@
-use super::MountPoint;
 use crate::prelude::*;
 
-/// 文件描述符
 #[derive(Debug)]
-pub struct File {
-    /// 挂载点句柄
-    pub mp: MountPoint,
-    /// 文件 inode id
+pub struct FileHandler {
+    /// The inode number of the file
     pub inode: InodeId,
-    /// 打开标志
-    pub flags: u32,
-    /// 文件大小
+    /// The open flags for the file
+    pub flags: OpenFlags,
+    /// The size of the file
     pub fsize: u64,
-    /// 实际文件位置
+    /// The current position in the file
     pub fpos: usize,
 }
 
-impl File {
-    pub fn new(mp: MountPoint, inode: InodeId, flags: u32, fsize: u64) -> Self {
-        File {
-            mp,
+impl FileHandler {
+    pub fn new(inode: InodeId, flags: OpenFlags, fsize: u64) -> Self {
+        FileHandler {
             inode,
             flags,
             fsize,
