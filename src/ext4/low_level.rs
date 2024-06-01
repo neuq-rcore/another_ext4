@@ -36,14 +36,8 @@ impl Ext4 {
     ///
     /// # Return
     ///
-    /// `Ok(fh)` - File handler of the new file
-    pub fn create(
-        &mut self,
-        parent: InodeId,
-        name: &str,
-        mode: InodeMode,
-        flags: OpenFlags,
-    ) -> Result<FileHandler> {
+    /// `Ok(inode)` - Inode id of the new file
+    pub fn create(&mut self, parent: InodeId, name: &str, mode: InodeMode) -> Result<InodeId> {
         let mut parent = self.read_inode(parent);
         // Can only create a file in a directory
         if !parent.inode.is_dir() {
@@ -54,27 +48,7 @@ impl Ext4 {
         self.link_inode(&mut parent, &mut child, name)
             .map_err(|_| Ext4Error::with_msg_str(ErrCode::ELINKFAIL, "link fail"))?;
         // Create file handler
-        Ok(FileHandler::new(child.id, flags, child.inode.size()))
-    }
-
-    /// Open a regular file, return a file handler if the given inode id
-    /// indicates a regular file.
-    ///
-    /// # Params
-    ///
-    /// * `inode_id` - inode id of the file
-    /// * `flags` - open flags
-    ///
-    /// # Return
-    ///
-    /// File handler of the file
-    pub fn open(&mut self, inode_id: InodeId, flags: OpenFlags) -> Result<FileHandler> {
-        let inode_ref = self.read_inode(inode_id);
-        // Can only open a regular file
-        if !inode_ref.inode.is_file() {
-            return_err_with_msg_str!(ErrCode::EINVAL, "Not a regular file");
-        }
-        Ok(FileHandler::new(inode_id, flags, inode_ref.inode.size()))
+        Ok(child.id)
     }
 
     /// Read data from a file. This function will read exactly `buf.len()`
@@ -83,30 +57,34 @@ impl Ext4 {
     /// # Params
     ///
     /// * `file` - the file handler, acquired by `open` or `create`
+    /// * `offset` - offset to read from
     /// * `buf` - the buffer to store the data
     ///
     /// # Return
     ///
     /// `Ok(usize)` - the actual number of bytes read
-    /// 
+    ///
     /// TODO: handle EOF
-    pub fn read(&mut self, file: &mut FileHandler, buf: &mut [u8]) -> Result<usize> {
+    pub fn read(&mut self, file: InodeId, offset: usize, buf: &mut [u8]) -> Result<usize> {
+        // Get the inode of the file
+        let mut inode_ref = self.read_inode(file);
+        if !inode_ref.inode.is_file() {
+            return_err_with_msg_str!(ErrCode::EISDIR, "Not a file");
+        }
+
         let read_size = buf.len();
         // Read no bytes
         if read_size == 0 {
             return Ok(0);
         }
-        // Get the inode of the file
-        let mut inode_ref = self.read_inode(file.inode);
-        // sync file size
-        file.fsize = inode_ref.inode.size();
-
+        // Get file size
+        let fsize = inode_ref.inode.size();
         // Calc the actual size to read
-        let size_to_read = min(read_size, file.fsize as usize - file.fpos);
+        let size_to_read = min(read_size, fsize as usize - offset);
         // Calc the start block of reading
-        let start_iblock = (file.fpos / BLOCK_SIZE) as LBlockId;
+        let start_iblock = (offset / BLOCK_SIZE) as LBlockId;
         // Calc the length that is not aligned to the block size
-        let misaligned = file.fpos % BLOCK_SIZE;
+        let misaligned = offset % BLOCK_SIZE;
 
         let mut cursor = 0;
         let mut iblock = start_iblock;
@@ -118,7 +96,6 @@ impl Ext4 {
             // Copy data from block to the user buffer
             buf[cursor..cursor + read_len].copy_from_slice(block.read_offset(misaligned, read_len));
             cursor += read_len;
-            file.fpos += read_len;
             iblock += 1;
         }
         // Continue with full block reads
@@ -129,7 +106,6 @@ impl Ext4 {
             // Copy data from block to the user buffer
             buf[cursor..cursor + read_len].copy_from_slice(block.read_offset(0, read_len));
             cursor += read_len;
-            file.fpos += read_len;
             iblock += 1;
         }
 
@@ -141,19 +117,27 @@ impl Ext4 {
     /// # Params
     ///
     /// * `file` - the file handler, acquired by `open` or `create`
+    /// * `offset` - offset to write to
     /// * `data` - the data to write
-    /// 
+    ///
+    /// # Return
+    ///
+    /// `Ok(usize)` - the actual number of bytes written
+    ///
     /// TODO: handle EOF
-    pub fn write(&mut self, file: &mut FileHandler, data: &[u8]) -> Result<()> {
-        let write_size = data.len();
-        let mut inode_ref = self.read_inode(file.inode);
-        file.fsize = inode_ref.inode.size();
+    pub fn write(&mut self, file: InodeId, offset: usize, data: &[u8]) -> Result<usize> {
+        // Get the inode of the file
+        let mut inode_ref = self.read_inode(file);
+        if !inode_ref.inode.is_file() {
+            return_err_with_msg_str!(ErrCode::EISDIR, "Not a file");
+        }
 
+        let write_size = data.len();
         // Calc the start and end block of reading
-        let start_iblock = (file.fpos / BLOCK_SIZE) as LBlockId;
-        let end_iblock = ((file.fpos + write_size) / BLOCK_SIZE) as LBlockId;
+        let start_iblock = (offset / BLOCK_SIZE) as LBlockId;
+        let end_iblock = ((offset + write_size) / BLOCK_SIZE) as LBlockId;
         // Calc the block count of the file
-        let block_count = (file.fsize as usize + BLOCK_SIZE - 1) / BLOCK_SIZE;
+        let block_count = (offset as usize + BLOCK_SIZE - 1) / BLOCK_SIZE;
         // Append enough block for writing
         let append_block_count = end_iblock + 1 - block_count as LBlockId;
         for _ in 0..append_block_count {
@@ -167,14 +151,17 @@ impl Ext4 {
             let write_len = min(BLOCK_SIZE, write_size - cursor);
             let fblock = self.extent_get_pblock(&mut inode_ref, iblock)?;
             let mut block = self.read_block(fblock);
-            block.write_offset(file.fpos % BLOCK_SIZE, &data[cursor..cursor + write_len]);
+            block.write_offset(
+                (offset + cursor) % BLOCK_SIZE,
+                &data[cursor..cursor + write_len],
+            );
             self.write_block(&block);
 
             cursor += write_len;
-            file.fpos += write_len;
             iblock += 1;
         }
-        Ok(())
+
+        Ok(cursor)
     }
 
     /// Create a hard link. This function will not check name conflict.
