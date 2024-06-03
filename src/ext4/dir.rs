@@ -18,7 +18,7 @@ impl Ext4 {
             let block = self.read_block(fblock);
             // Find the entry in block
             let res = Self::find_entry_in_block(&block, name);
-            if let Ok(r) = res {
+            if let Some(r) = res {
                 return Ok(r);
             }
             iblock += 1;
@@ -44,7 +44,7 @@ impl Ext4 {
         let mut iblock: LBlockId = 0;
         while iblock < total_blocks {
             // Get the parent physical block id
-            let fblock = self.extent_get_pblock(dir, iblock)?;
+            let fblock = self.extent_get_pblock(dir, iblock).unwrap();
             // Load the parent block from disk
             let mut block = self.read_block(fblock);
             // Try inserting the entry to parent block
@@ -76,11 +76,11 @@ impl Ext4 {
         let mut iblock: LBlockId = 0;
         while iblock < total_blocks {
             // Get the parent physical block id
-            let fblock = self.extent_get_pblock(dir, iblock)?;
+            let fblock = self.extent_get_pblock(dir, iblock).unwrap();
             // Load the block from disk
             let mut block = self.read_block(fblock);
             // Try removing the entry
-            if let Ok(()) = Self::remove_entry_from_block(&mut block, name) {
+            if Self::remove_entry_from_block(&mut block, name) {
                 self.write_block(&block);
                 return Ok(());
             }
@@ -93,7 +93,7 @@ impl Ext4 {
     }
 
     /// Get all entries under a directory
-    pub(super) fn dir_get_all_entries(&self, dir: &InodeRef) -> Result<Vec<DirEntry>> {
+    pub(super) fn dir_get_all_entries(&self, dir: &InodeRef) -> Vec<DirEntry> {
         info!("Dir get all entries: dir {}", dir.id);
         let inode_size: u32 = dir.inode.size;
         let total_blocks: u32 = inode_size / BLOCK_SIZE as u32;
@@ -102,32 +102,32 @@ impl Ext4 {
         let mut iblock: LBlockId = 0;
         while iblock < total_blocks {
             // Get the fs block id
-            let fblock = self.extent_get_pblock(dir, iblock)?;
+            let fblock = self.extent_get_pblock(dir, iblock).unwrap();
             // Load block from disk
             let block = self.read_block(fblock);
             // Get all entries from block
             Self::get_all_entries_from_block(&block, &mut entries);
             iblock += 1;
         }
-        Ok(entries)
+        entries
     }
 
     /// Find a directory entry that matches a given name in a given block
-    fn find_entry_in_block(block: &Block, name: &str) -> Result<DirEntry> {
+    fn find_entry_in_block(block: &Block, name: &str) -> Option<DirEntry> {
         info!("Dir find entry {} in block {}", name, block.block_id);
         let mut offset = 0;
         while offset < BLOCK_SIZE {
             let de: DirEntry = block.read_offset_as(offset);
             if !de.unused() && de.compare_name(name) {
-                return Ok(de);
+                return Some(de);
             }
             offset += de.rec_len() as usize;
         }
-        Err(Ext4Error::new(ErrCode::ENOENT))
+        None
     }
 
     /// Remove a directory entry that matches a given name from a given block
-    fn remove_entry_from_block(block: &mut Block, name: &str) -> Result<()> {
+    fn remove_entry_from_block(block: &mut Block, name: &str) -> bool {
         info!("Dir remove entry {} from block {}", name, block.block_id);
         let mut offset = 0;
         while offset < BLOCK_SIZE {
@@ -136,11 +136,11 @@ impl Ext4 {
                 // Mark the target entry as unused
                 de.set_unused();
                 block.write_offset_as(offset, &de);
-                return Ok(());
+                return true;
             }
             offset += de.rec_len() as usize;
         }
-        Err(Ext4Error::new(ErrCode::ENOENT))
+        false
     }
 
     /// Get all directory entries from a given block

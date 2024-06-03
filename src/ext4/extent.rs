@@ -23,7 +23,6 @@ impl ExtentSearchStep {
 
 impl Ext4 {
     /// Given a logic block id, find the corresponding fs block id.
-    /// Return 0 if not found.
     pub(super) fn extent_get_pblock(
         &self,
         inode_ref: &InodeRef,
@@ -47,7 +46,7 @@ impl Ext4 {
             let ex = ex_node.extent_at(index);
             Ok(ex.start_pblock() + (iblock - ex.start_lblock()) as PBlockId)
         } else {
-            Err(Ext4Error::new(ErrCode::ENOENT))
+            Err(Ext4Error::with_msg_str(ErrCode::ENOENT, "Extent not found"))
         }
     }
 

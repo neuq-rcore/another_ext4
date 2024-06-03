@@ -37,6 +37,11 @@ impl Ext4 {
     /// # Return
     ///
     /// `Ok(inode)` - Inode id of the new file
+    ///
+    /// # Error
+    ///
+    /// * `ENOTDIR` - `parent` is not a directory
+    /// * `ENOSPC` - No space left on device
     pub fn create(&mut self, parent: InodeId, name: &str, mode: InodeMode) -> Result<InodeId> {
         let mut parent = self.read_inode(parent);
         // Can only create a file in a directory
@@ -45,8 +50,7 @@ impl Ext4 {
         }
         // Create child inode and link it to parent directory
         let mut child = self.create_inode(mode)?;
-        self.link_inode(&mut parent, &mut child, name)
-            .map_err(|_| Ext4Error::with_msg_str(ErrCode::ELINKFAIL, "link fail"))?;
+        self.link_inode(&mut parent, &mut child, name)?;
         // Create file handler
         Ok(child.id)
     }
@@ -63,6 +67,10 @@ impl Ext4 {
     /// # Return
     ///
     /// `Ok(usize)` - the actual number of bytes read
+    ///
+    /// # Error
+    ///
+    /// * `EISDIR` - `file` is not a regular file
     ///
     /// TODO: handle EOF
     pub fn read(&mut self, file: InodeId, offset: usize, buf: &mut [u8]) -> Result<usize> {
@@ -91,7 +99,9 @@ impl Ext4 {
         // Read first block
         if misaligned > 0 {
             let read_len = min(BLOCK_SIZE - misaligned, size_to_read);
-            let fblock = self.extent_get_pblock(&mut inode_ref, start_iblock)?;
+            let fblock = self
+                .extent_get_pblock(&mut inode_ref, start_iblock)
+                .unwrap();
             let block = self.read_block(fblock);
             // Copy data from block to the user buffer
             buf[cursor..cursor + read_len].copy_from_slice(block.read_offset(misaligned, read_len));
@@ -101,7 +111,7 @@ impl Ext4 {
         // Continue with full block reads
         while cursor < size_to_read {
             let read_len = min(BLOCK_SIZE, size_to_read - cursor);
-            let fblock = self.extent_get_pblock(&mut inode_ref, iblock)?;
+            let fblock = self.extent_get_pblock(&mut inode_ref, iblock).unwrap();
             let block = self.read_block(fblock);
             // Copy data from block to the user buffer
             buf[cursor..cursor + read_len].copy_from_slice(block.read_offset(0, read_len));
@@ -123,6 +133,11 @@ impl Ext4 {
     /// # Return
     ///
     /// `Ok(usize)` - the actual number of bytes written
+    ///
+    /// # Error
+    ///
+    /// * `EISDIR` - `file` is not a regular file
+    /// `ENOSPC` - no space left on device
     ///
     /// TODO: handle EOF
     pub fn write(&mut self, file: InodeId, offset: usize, data: &[u8]) -> Result<usize> {
@@ -175,6 +190,11 @@ impl Ext4 {
     /// # Return
     ///
     /// `Ok(child)` - An inode reference to the child inode.
+    ///
+    /// # Error
+    ///
+    /// * `ENOTDIR` - `parent` is not a directory
+    /// * `ENOSPC` - no space left on device
     pub fn link(&mut self, child: InodeId, parent: InodeId, name: &str) -> Result<InodeRef> {
         let mut parent = self.read_inode(parent);
         // Can only link to a directory
@@ -186,13 +206,17 @@ impl Ext4 {
         Ok(child)
     }
 
-    /// Unlink a file. This function will not check the existence of the file.
-    /// Call `lookup` to check beforehand.
+    /// Unlink a file.
     ///
     /// # Params
     ///
     /// * `parent` - the inode of the directory to unlink from
     /// * `name` - the name of the file to unlink
+    ///
+    /// # Error
+    ///
+    /// * `ENOTDIR` - `parent` is not a directory
+    /// * `ENOENT` - `name` does not exist in `parent`
     pub fn unlink(&mut self, parent: InodeId, name: &str) -> Result<()> {
         let mut parent = self.read_inode(parent);
         // Can only unlink from a directory
@@ -201,6 +225,44 @@ impl Ext4 {
         }
         let child_id = self.dir_find_entry(&parent, name)?.inode();
         let mut child = self.read_inode(child_id);
+        self.unlink_inode(&mut parent, &mut child, name)
+    }
+
+    /// Move a file. This function will not check name conflict.
+    /// Call `lookup` to check beforehand.
+    ///
+    /// # Params
+    ///
+    /// * `parent` - the inode of the directory to move from
+    /// * `name` - the name of the file to move
+    /// * `new_parent` - the inode of the directory to move to
+    /// * `new_name` - the new name of the file
+    ///
+    /// # Error
+    ///
+    /// * `ENOTDIR` - `parent` or `new_parent` is not a directory
+    /// * `ENOENT` - `name` does not exist in `parent`
+    /// * `ENOSPC` - no space left on device
+    pub fn rename(
+        &mut self,
+        parent: InodeId,
+        name: &str,
+        new_parent: InodeId,
+        new_name: &str,
+    ) -> Result<()> {
+        let mut parent = self.read_inode(parent);
+        if !parent.inode.is_dir() {
+            return_err_with_msg_str!(ErrCode::ENOTDIR, "Not a directory");
+        }
+        let mut new_parent = self.read_inode(new_parent);
+        if !new_parent.inode.is_dir() {
+            return_err_with_msg_str!(ErrCode::ENOTDIR, "Not a directory");
+        }
+
+        let child_id = self.dir_find_entry(&parent, name)?;
+        let mut child = self.read_inode(child_id.inode());
+
+        self.link_inode(&mut new_parent, &mut child, new_name)?;
         self.unlink_inode(&mut parent, &mut child, name)
     }
 
@@ -216,6 +278,11 @@ impl Ext4 {
     /// # Return
     ///
     /// `Ok(child)` - An inode reference to the new directory.
+    ///
+    /// # Error
+    ///
+    /// * `ENOTDIR` - `parent` is not a directory
+    /// * `ENOSPC` - no space left on device
     pub fn mkdir(&mut self, parent: InodeId, name: &str, mode: InodeMode) -> Result<InodeRef> {
         let mut parent = self.read_inode(parent);
         // Can only create a directory in a directory
@@ -226,8 +293,7 @@ impl Ext4 {
         let mode = mode & InodeMode::PERM_MASK | InodeMode::DIRECTORY;
         let mut child = self.create_inode(mode)?;
         // Link the new inode
-        self.link_inode(&mut parent, &mut child, name)
-            .map_err(|_| Ext4Error::with_msg_str(ErrCode::ELINKFAIL, "link fail"))?;
+        self.link_inode(&mut parent, &mut child, name)?;
 
         Ok(child)
     }
@@ -242,6 +308,11 @@ impl Ext4 {
     /// # Return
     ///
     /// `Ok(child)`: The inode id to which the directory entry points.
+    ///
+    /// # Error
+    ///
+    /// * `ENOTDIR` - `parent` is not a directory
+    /// * `ENOENT` - `name` does not exist in `parent`
     pub fn lookup(&mut self, parent: InodeId, name: &str) -> Result<InodeId> {
         let parent = self.read_inode(parent);
         // Can only lookup in a directory
@@ -261,22 +332,31 @@ impl Ext4 {
     /// # Return
     ///
     /// `Ok(entries)` - A vector of directory entries in the directory.
+    ///
+    /// # Error
+    ///
+    /// `ENOTDIR` - `inode` is not a directory
     pub fn list(&self, inode: InodeId) -> Result<Vec<DirEntry>> {
         let inode_ref = self.read_inode(inode);
         // Can only list a directory
         if inode_ref.inode.file_type() != FileType::Directory {
             return_err_with_msg_str!(ErrCode::ENOTDIR, "Not a directory");
         }
-        self.dir_get_all_entries(&inode_ref)
+        Ok(self.dir_get_all_entries(&inode_ref))
     }
 
-    /// Remove an empty directory. Return `ENOTEMPTY` if the child directory
-    /// is not empty.
+    /// Remove an empty directory.
     ///
     /// # Params
     ///
     /// * `parent` - the parent directory where the directory is located
     /// * `name` - the name of the directory to remove
+    ///
+    /// # Error
+    ///
+    /// * `ENOTDIR` - `parent` or `child` is not a directory
+    /// * `ENOENT` - `name` does not exist in `parent`
+    /// * `ENOTEMPTY` - `child` is not empty
     pub fn rmdir(&mut self, parent: InodeId, name: &str) -> Result<()> {
         let mut parent = self.read_inode(parent);
         // Can only remove a directory in a directory
@@ -289,7 +369,7 @@ impl Ext4 {
             return_err_with_msg_str!(ErrCode::ENOTDIR, "Child not a directory");
         }
         // Child must be empty
-        if self.dir_get_all_entries(&child)?.len() > 2 {
+        if self.dir_get_all_entries(&child).len() > 2 {
             return_err_with_msg_str!(ErrCode::ENOTEMPTY, "Directory not empty");
         }
         // Remove directory entry

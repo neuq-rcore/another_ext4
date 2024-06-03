@@ -138,7 +138,7 @@ impl Ext4 {
         let mut child = self.read_inode(child_id);
         if child.inode.is_dir() {
             // Check if the directory is empty
-            if self.dir_get_all_entries(&child)?.len() > 2 {
+            if self.dir_get_all_entries(&child).len() > 2 {
                 return_err_with_msg_str!(ErrCode::ENOTEMPTY, "Directory not empty");
             }
         }
