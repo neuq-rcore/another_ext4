@@ -1,6 +1,7 @@
 use super::Ext4;
 use crate::constants::*;
 use crate::ext4_defs::*;
+use crate::format_error;
 use crate::prelude::*;
 use core::cmp::min;
 
@@ -46,7 +47,10 @@ impl Ext4 {
             let ex = ex_node.extent_at(index);
             Ok(ex.start_pblock() + (iblock - ex.start_lblock()) as PBlockId)
         } else {
-            Err(Ext4Error::with_msg_str(ErrCode::ENOENT, "Extent not found"))
+            Err(format_error!(
+                ErrCode::ENOENT,
+                "extent_get_pblock: extent not found"
+            ))
         }
     }
 

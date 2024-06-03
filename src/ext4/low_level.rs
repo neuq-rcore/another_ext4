@@ -7,7 +7,7 @@ use super::Ext4;
 use crate::constants::*;
 use crate::ext4_defs::*;
 use crate::prelude::*;
-use crate::return_err_with_msg_str;
+use crate::return_error;
 use core::cmp::min;
 
 impl Ext4 {
@@ -46,7 +46,7 @@ impl Ext4 {
         let mut parent = self.read_inode(parent);
         // Can only create a file in a directory
         if !parent.inode.is_dir() {
-            return_err_with_msg_str!(ErrCode::ENOTDIR, "Not a directory");
+            return_error!(ErrCode::ENOTDIR, "Inode {} is not a directory", parent.id);
         }
         // Create child inode and link it to parent directory
         let mut child = self.create_inode(mode)?;
@@ -77,7 +77,7 @@ impl Ext4 {
         // Get the inode of the file
         let mut inode_ref = self.read_inode(file);
         if !inode_ref.inode.is_file() {
-            return_err_with_msg_str!(ErrCode::EISDIR, "Not a file");
+            return_error!(ErrCode::EISDIR, "Inode {} is not a file", file);
         }
 
         let read_size = buf.len();
@@ -144,7 +144,7 @@ impl Ext4 {
         // Get the inode of the file
         let mut inode_ref = self.read_inode(file);
         if !inode_ref.inode.is_file() {
-            return_err_with_msg_str!(ErrCode::EISDIR, "Not a file");
+            return_error!(ErrCode::EISDIR, "Inode {} is not a file", file);
         }
 
         let write_size = data.len();
@@ -199,7 +199,7 @@ impl Ext4 {
         let mut parent = self.read_inode(parent);
         // Can only link to a directory
         if !parent.inode.is_dir() {
-            return_err_with_msg_str!(ErrCode::ENOTDIR, "Not a directory");
+            return_error!(ErrCode::ENOTDIR, "Inode {} is not a directory", parent.id);
         }
         let mut child = self.read_inode(child);
         self.link_inode(&mut parent, &mut child, name)?;
@@ -221,7 +221,7 @@ impl Ext4 {
         let mut parent = self.read_inode(parent);
         // Can only unlink from a directory
         if !parent.inode.is_dir() {
-            return_err_with_msg_str!(ErrCode::ENOTDIR, "Not a directory");
+            return_error!(ErrCode::ENOTDIR, "Inode {} is not a directory", parent.id);
         }
         let child_id = self.dir_find_entry(&parent, name)?.inode();
         let mut child = self.read_inode(child_id);
@@ -252,11 +252,15 @@ impl Ext4 {
     ) -> Result<()> {
         let mut parent = self.read_inode(parent);
         if !parent.inode.is_dir() {
-            return_err_with_msg_str!(ErrCode::ENOTDIR, "Not a directory");
+            return_error!(ErrCode::ENOTDIR, "Inode {} is not a directory", parent.id);
         }
         let mut new_parent = self.read_inode(new_parent);
         if !new_parent.inode.is_dir() {
-            return_err_with_msg_str!(ErrCode::ENOTDIR, "Not a directory");
+            return_error!(
+                ErrCode::ENOTDIR,
+                "Inode {} is not a directory",
+                new_parent.id
+            );
         }
 
         let child_id = self.dir_find_entry(&parent, name)?;
@@ -287,7 +291,7 @@ impl Ext4 {
         let mut parent = self.read_inode(parent);
         // Can only create a directory in a directory
         if !parent.inode.is_dir() {
-            return_err_with_msg_str!(ErrCode::ENOTDIR, "Not a directory");
+            return_error!(ErrCode::ENOTDIR, "Inode {} is not a directory", parent.id);
         }
         // Create file/directory
         let mode = mode & InodeMode::PERM_MASK | InodeMode::DIRECTORY;
@@ -317,7 +321,7 @@ impl Ext4 {
         let parent = self.read_inode(parent);
         // Can only lookup in a directory
         if !parent.inode.is_dir() {
-            return_err_with_msg_str!(ErrCode::ENOTDIR, "Not a directory");
+            return_error!(ErrCode::ENOTDIR, "Inode {} is not a directory", parent.id);
         }
         self.dir_find_entry(&parent, name)
             .map(|entry| entry.inode())
@@ -340,7 +344,7 @@ impl Ext4 {
         let inode_ref = self.read_inode(inode);
         // Can only list a directory
         if inode_ref.inode.file_type() != FileType::Directory {
-            return_err_with_msg_str!(ErrCode::ENOTDIR, "Not a directory");
+            return_error!(ErrCode::ENOTDIR, "Inode {} is not a directory", inode);
         }
         Ok(self.dir_get_all_entries(&inode_ref))
     }
@@ -361,16 +365,16 @@ impl Ext4 {
         let mut parent = self.read_inode(parent);
         // Can only remove a directory in a directory
         if !parent.inode.is_dir() {
-            return_err_with_msg_str!(ErrCode::ENOTDIR, "Parent not a directory");
+            return_error!(ErrCode::ENOTDIR, "Inode {} is not a directory", parent.id);
         }
         let mut child = self.read_inode(self.dir_find_entry(&parent, name)?.inode());
         // Child must be a directory
         if !child.inode.is_dir() {
-            return_err_with_msg_str!(ErrCode::ENOTDIR, "Child not a directory");
+            return_error!(ErrCode::ENOTDIR, "Inode {} is not a directory", child.id);
         }
         // Child must be empty
         if self.dir_get_all_entries(&child).len() > 2 {
-            return_err_with_msg_str!(ErrCode::ENOTEMPTY, "Directory not empty");
+            return_error!(ErrCode::ENOTEMPTY, "Directory {} is not empty", child.id);
         }
         // Remove directory entry
         self.unlink_inode(&mut parent, &mut child, name)

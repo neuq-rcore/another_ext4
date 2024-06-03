@@ -11,7 +11,7 @@
 use super::Ext4;
 use crate::ext4_defs::*;
 use crate::prelude::*;
-use crate::return_err_with_msg_str;
+use crate::return_error;
 
 impl Ext4 {
     /// Look up an object in the filesystem.
@@ -38,7 +38,7 @@ impl Ext4 {
     /// Open a file in the filesystem. Return error if the file does not exist.
     ///
     /// ## Params
-    /// 
+    ///
     /// * `root` - The inode id of the root directory for search.
     /// * `path` - The path of the object to be opened.
     /// * `flags` - The open flags. Creation (O_CREAT, O_EXCL, O_NOCTTY) flags
@@ -57,7 +57,7 @@ impl Ext4 {
         let inode = self.inode(inode_id);
         // Check file type
         if !inode.inode.is_file() {
-            return_err_with_msg_str!(ErrCode::ENOENT, "Not a file");
+            return_error!(ErrCode::EISDIR, "File {} is not a regular file", path);
         }
         Ok(FileHandler::new(inode.id, flags, inode.inode.size()))
     }
@@ -89,7 +89,7 @@ impl Ext4 {
         // Search recursively
         for (i, path) in search_path.iter().enumerate() {
             if !cur.inode.is_dir() {
-                return_err_with_msg_str!(ErrCode::ENOTDIR, "Not a directory");
+                return_error!(ErrCode::ENOTDIR, "Parent directory is not a directory");
             }
             match self.dir_find_entry(&cur, &path) {
                 Ok(de) => {
@@ -108,8 +108,7 @@ impl Ext4 {
                         // Create the directory
                         self.create_inode(InodeMode::DIRECTORY | InodeMode::ALL_RWX)?
                     };
-                    self.link_inode(&mut cur, &mut child, path)
-                        .map_err(|_| Ext4Error::with_msg_str(ErrCode::ELINKFAIL, "link fail"))?;
+                    self.link_inode(&mut cur, &mut child, path)?;
                     cur = child;
                 }
             }
@@ -139,7 +138,7 @@ impl Ext4 {
         if child.inode.is_dir() {
             // Check if the directory is empty
             if self.dir_get_all_entries(&child).len() > 2 {
-                return_err_with_msg_str!(ErrCode::ENOTEMPTY, "Directory not empty");
+                return_error!(ErrCode::ENOTEMPTY, "Directory {} not empty", path);
             }
         }
         // Unlink the file

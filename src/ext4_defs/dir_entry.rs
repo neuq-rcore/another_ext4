@@ -4,11 +4,12 @@
 //! linear array of directory entries.
 
 use super::crc::*;
+use super::AsBytes;
 use super::FileType;
 use super::SuperBlock;
 use crate::constants::*;
+use crate::format_error;
 use crate::prelude::*;
-use super::AsBytes;
 
 #[repr(C)]
 #[derive(Clone, Copy)]
@@ -103,7 +104,12 @@ impl DirEntry {
     pub fn name(&self) -> Result<String> {
         let name_len = self.name_len as usize;
         let name = &self.name[..name_len];
-        String::from_utf8(name.to_vec()).map_err(|e| e.into())
+        String::from_utf8(name.to_vec()).map_err(|_| {
+            format_error!(
+                ErrCode::EINVAL,
+                "Invalid UTF-8 sequence in directory entry name"
+            )
+        })
     }
 
     pub fn compare_name(&self, name: &str) -> bool {

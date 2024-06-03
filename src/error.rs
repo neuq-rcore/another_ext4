@@ -34,90 +34,60 @@ pub enum ErrCode {
 
 /// error used in this crate
 pub struct Ext4Error {
-    errno: ErrCode,
-    msg: Option<String>,
+    code: ErrCode,
+    message: Option<String>,
 }
 
 impl Debug for Ext4Error {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        if let Some(msg) = &self.msg {
-            write!(f, "Ext4Error {{ errno: {:?}, msg: {:?} }}", self.errno, msg)
+        if let Some(message) = &self.message {
+            write!(
+                f,
+                "Ext4Error {{ code: {:?}, message: {:?} }}",
+                self.code, message
+            )
         } else {
-            write!(f, "Ext4Error {{ errno: {:?} }}", self.errno)
+            write!(f, "Ext4Error {{ code: {:?} }}", self.code)
         }
     }
 }
 
 impl Ext4Error {
-    pub const fn new(errno: ErrCode) -> Self {
-        Ext4Error { errno, msg: None }
-    }
-
-    pub const fn with_msg(errno: ErrCode, msg: String) -> Self {
+    pub const fn new(code: ErrCode) -> Self {
         Ext4Error {
-            errno,
-            msg: Some(msg),
+            code,
+            message: None,
         }
     }
 
-    pub fn with_msg_str(errno: ErrCode, msg: &str) -> Self {
+    pub const fn with_message(code: ErrCode, message: String) -> Self {
         Ext4Error {
-            errno,
-            msg: Some(msg.to_owned()),
+            code,
+            message: Some(message),
         }
     }
 
     pub const fn code(&self) -> ErrCode {
-        self.errno
-    }
-}
-
-impl From<ErrCode> for Ext4Error {
-    fn from(errno: ErrCode) -> Self {
-        Ext4Error::new(errno)
-    }
-}
-
-impl From<core::str::Utf8Error> for Ext4Error {
-    fn from(_: core::str::Utf8Error) -> Self {
-        Ext4Error::with_msg(ErrCode::EINVAL, "Invalid utf-8 string".to_owned())
-    }
-}
-
-impl From<alloc::string::FromUtf8Error> for Ext4Error {
-    fn from(_: alloc::string::FromUtf8Error) -> Self {
-        Ext4Error::with_msg(ErrCode::EINVAL, "Invalid utf-8 string".to_owned())
-    }
-}
-
-impl From<core::ffi::FromBytesUntilNulError> for Ext4Error {
-    fn from(_: core::ffi::FromBytesUntilNulError) -> Self {
-        Ext4Error::with_msg(ErrCode::E2BIG, "Cannot find null in cstring".to_owned())
-    }
-}
-
-impl From<core::ffi::FromBytesWithNulError> for Ext4Error {
-    fn from(_: core::ffi::FromBytesWithNulError) -> Self {
-        Ext4Error::with_msg(ErrCode::E2BIG, "Cannot find null in cstring".to_owned())
-    }
-}
-
-impl From<alloc::ffi::NulError> for Ext4Error {
-    fn from(_: alloc::ffi::NulError) -> Self {
-        Ext4Error::with_msg(ErrCode::E2BIG, "Cannot find null in cstring".to_owned())
+        self.code
     }
 }
 
 #[macro_export]
-macro_rules! return_err {
-    ($errno: expr) => {
-        return Err(Ext4Error::new($errno))
+macro_rules! format_error {
+    ($code: expr, $message: expr) => {
+        crate::error::Ext4Error::with_message($code, format!($message))
+    };
+    ($code: expr, $fmt: expr,  $($args:tt)*) => {
+        crate::error::Ext4Error::with_message($code, format!($fmt, $($args)*))
     };
 }
 
 #[macro_export]
-macro_rules! return_err_with_msg_str {
-    ($errno: expr, $message: expr) => {
-        return Err(Ext4Error::with_msg_str($errno, $message))
+macro_rules! return_error {
+    ($code: expr, $message: expr) => {
+        return Err(crate::format_error!($code, $message));
     };
+    ($code: expr, $fmt: expr,  $($args:tt)*) => {
+        return Err(crate::format_error!($code, $fmt, $($args)*));
+    }
 }
