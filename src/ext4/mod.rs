@@ -5,11 +5,11 @@ use crate::prelude::*;
 mod alloc;
 mod dir;
 mod extent;
-mod link;
-mod journal;
-mod rw;
-mod low_level;
 mod high_level;
+mod journal;
+mod link;
+mod low_level;
+mod rw;
 
 #[derive(Debug)]
 pub struct Ext4 {

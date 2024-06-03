@@ -1,7 +1,9 @@
 use super::Ext4;
 use crate::constants::*;
 use crate::ext4_defs::*;
+use crate::format_error;
 use crate::prelude::*;
+use crate::return_error;
 
 impl Ext4 {
     /// Create a new inode, returning the inode and its number
@@ -104,9 +106,10 @@ impl Ext4 {
         // Find the first free block
         let fblock = bitmap
             .find_and_set_first_clear_bit(0, 8 * BLOCK_SIZE)
-            .ok_or(Ext4Error::with_msg(
+            .ok_or(format_error!(
                 ErrCode::ENOSPC,
-                "No free block".to_owned(),
+                "No free blocks in block group {}",
+                bgid
             ))? as PBlockId;
 
         // Set block group checksum
@@ -153,10 +156,7 @@ impl Ext4 {
 
         // Free the block
         if bitmap.is_bit_clear(pblock as usize) {
-            return Err(Ext4Error::with_msg(
-                ErrCode::EINVAL,
-                "Block double free".to_owned(),
-            ));
+            return_error!(ErrCode::EINVAL, "Block {} is already free", pblock);
         }
         bitmap.clear_bit(pblock as usize);
 
@@ -208,9 +208,10 @@ impl Ext4 {
             let idx_in_bg =
                 bitmap
                     .find_and_set_first_clear_bit(0, inode_count)
-                    .ok_or(Ext4Error::with_msg(
+                    .ok_or(format_error!(
                         ErrCode::ENOSPC,
-                        "No free inode".to_owned(),
+                        "No free inodes in block group {}",
+                        bgid
                     ))? as u32;
 
             // Update bitmap in disk
@@ -248,8 +249,9 @@ impl Ext4 {
 
             return Ok(inode_id);
         }
+
         log::info!("no free inode");
-        Err(Ext4Error::new(ErrCode::ENOSPC))
+        return_error!(ErrCode::ENOSPC, "No free inodes in block group {}", bgid);
     }
 
     /// Free an inode
@@ -270,10 +272,12 @@ impl Ext4 {
 
         // Free the inode
         if bitmap.is_bit_clear(idx_in_bg as usize) {
-            return Err(Ext4Error::with_msg(
+            return_error!(
                 ErrCode::EINVAL,
-                "Inode double free".to_owned(),
-            ));
+                "Inode {} is already free in block group {}",
+                inode_ref.id,
+                bgid
+            );
         }
         bitmap.clear_bit(idx_in_bg as usize);
 

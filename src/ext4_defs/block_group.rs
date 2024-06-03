@@ -8,12 +8,12 @@
 //! See [`super`] for more information.
 
 use super::crc::*;
+use super::AsBytes;
 use super::Bitmap;
 use super::BlockDevice;
 use super::SuperBlock;
 use crate::constants::*;
 use crate::prelude::*;
-use super::AsBytes;
 
 #[derive(Debug, Default, Clone, Copy)]
 #[repr(C, packed)]
@@ -194,7 +194,7 @@ impl BlockGroupRef {
             desc,
         }
     }
-    
+
     pub fn sync_to_disk_without_csum(
         &self,
         block_device: &dyn BlockDevice,
