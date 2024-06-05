@@ -45,7 +45,6 @@ impl Ext4 {
         // Add `.` and `..` entries
         self.dir_add_entry(&mut root, &root_self, ".")?;
         self.dir_add_entry(&mut root, &root_self, "..")?;
-        root.inode.link_count += 2;
 
         self.write_inode_with_csum(&mut root);
         Ok(root)

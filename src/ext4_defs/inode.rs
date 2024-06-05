@@ -84,47 +84,81 @@ impl InodeMode {
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct Linux2 {
-    pub l_i_blocks_high: u16, // 原来是l_i_reserved1
-    pub l_i_file_acl_high: u16,
-    pub l_i_uid_high: u16,    // 这两个字段
-    pub l_i_gid_high: u16,    // 原来是reserved2[0]
-    pub l_i_checksum_lo: u16, // crc32c(uuid+inum+inode) LE
-    pub l_i_reserved: u16,
+    /// Upper 16-bits of the block count. See the note attached to i_blocks_lo.
+    pub l_blocks_hi: u16,
+    /// Upper 16-bits of the extended attribute block.
+    pub l_file_acl_hi: u16,
+    /// Upper 16-bits of the Owner UID.
+    pub l_uid_hi: u16,
+    /// Upper 16-bits of the GID.
+    pub l_gid_hi: u16,
+    /// Lower 16-bits of the inode checksum.
+    pub l_checksum_lo: u16,
+    /// Reserved.
+    pub l_reserved: u16,
 }
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Inode {
-    pub mode: u16,
-    pub uid: u16,
-    pub size: u32,
-    pub atime: u32,
-    pub ctime: u32,
-    pub mtime: u32,
-    pub dtime: u32,
-    pub gid: u16,
-    pub link_count: u16,
+    /// File mode.
+    mode: u16,
+    /// Lower 16-bits of Owner UID.
+    uid: u16,
+    /// Lower 32-bits of size in bytes.
+    size: u32,
+    /// Last access time, in seconds since the epoch.
+    atime: u32,
+    /// Last inode change time, in seconds since the epoch.
+    ctime: u32,
+    /// Last data modification time, in seconds since the epoch.
+    mtime: u32,
+    /// Deletion Time, in seconds since the epoch.
+    dtime: u32,
+    /// Lower 16-bits of GID.
+    gid: u16,
+    /// Hard link count.
+    link_count: u16,
+    /// Lower 32-bits of "block" count.
     /// Note: this field is different from ext4 inode by now.
     /// Ext4 defines this as the count of 512-byte blocks.
     /// To simplify, we define this as the count of 4096-byte blocks.
-    pub block_count: u32,
-    pub flags: u32,
-    pub osd1: u32,
-    pub block: [u8; 60], // Block bitmap or extent tree
-    pub generation: u32,
-    pub file_acl: u32,
-    pub size_hi: u32,
-    pub faddr: u32,   /* Obsoleted fragment address */
-    pub osd2: Linux2, // 操作系统相关的字段2
-
-    pub extra_isize: u16,
-    pub checksum_hi: u16,  // crc32c(uuid+inum+inode) BE
-    pub ctime_extra: u32,  // 额外的修改时间（nsec << 2 | epoch）
-    pub mtime_extra: u32,  // 额外的文件修改时间（nsec << 2 | epoch）
-    pub atime_extra: u32,  // 额外的访问时间（nsec << 2 | epoch）
-    pub crtime: u32,       // 文件创建时间
-    pub crtime_extra: u32, // 额外的文件创建时间（nsec << 2 | epoch）
-    pub version_hi: u32,   // 64位版本的高32位
+    block_count: u32,
+    /// Inode flags.
+    flags: u32,
+    /// Os related fields 1.
+    osd1: u32,
+    /// Block map or extent tree.
+    block: [u8; 60],
+    /// File version (for NFS).
+    generation: u32,
+    /// Lower 32-bits of extended attribute block.
+    file_acl: u32,
+    /// Upper 32-bits of file/directory size.
+    size_hi: u32,
+    /// (Obsolete) fragment address.
+    faddr: u32,
+    /// Os related fields 2.
+    osd2: Linux2,
+    /// Size of this inode - 128. Alternately, the size of the extended inode
+    /// fields beyond the original ext2 inode, including this field.
+    extra_isize: u16,
+    /// Upper 16-bits of the inode checksum.
+    checksum_hi: u16,
+    /// Extra change time bits. This provides sub-second precision.
+    ctime_extra: u32,
+    /// Extra modification time bits. This provides sub-second precision.
+    mtime_extra: u32,
+    /// Extra access time bits. This provides sub-second precision.
+    atime_extra: u32,
+    /// File creation time, in seconds since the epoch.
+    crtime: u32,
+    /// Extra file creation time bits. This provides sub-second precision.
+    crtime_extra: u32,
+    /// Upper 32-bits for version number.
+    version_hi: u32,
+    /// Project id
+    projid: u32,
 }
 
 /// Because `[u8; 60]` cannot derive `Default`, we implement it manually.
@@ -134,17 +168,9 @@ impl Default for Inode {
     }
 }
 
-impl AsBytes for Inode {}
+unsafe impl AsBytes for Inode {}
 
 impl Inode {
-    pub fn flags(&self) -> u32 {
-        self.flags
-    }
-
-    pub fn set_flags(&mut self, f: u32) {
-        self.flags |= f;
-    }
-
     pub fn mode(&self) -> InodeMode {
         InodeMode::from_bits_truncate(self.mode)
     }
@@ -177,8 +203,16 @@ impl Inode {
         self.link_count = cnt;
     }
 
+    pub fn uid(&self) -> u16 {
+        self.uid
+    }
+
     pub fn set_uid(&mut self, uid: u16) {
         self.uid = uid;
+    }
+
+    pub fn gid(&self) -> u16 {
+        self.gid
     }
 
     pub fn set_gid(&mut self, gid: u16) {
@@ -194,33 +228,49 @@ impl Inode {
         self.size_hi = (size >> 32) as u32;
     }
 
+    pub fn access_time(&self) -> u32 {
+        self.atime
+    }
+
     pub fn set_access_time(&mut self, access_time: u32) {
         self.atime = access_time;
     }
 
-    pub fn set_change_inode_time(&mut self, change_inode_time: u32) {
-        self.ctime = change_inode_time;
+    pub fn change_time(&self) -> u32 {
+        self.ctime
     }
 
-    pub fn set_modif_time(&mut self, modif_time: u32) {
+    pub fn set_change_time(&mut self, change_time: u32) {
+        self.ctime = change_time;
+    }
+
+    pub fn modify_time(&self) -> u32 {
+        self.mtime
+    }
+
+    pub fn set_modify_time(&mut self, modif_time: u32) {
         self.mtime = modif_time;
     }
 
-    pub fn set_del_time(&mut self, del_time: u32) {
+    pub fn delete_time(&self) -> u32 {
+        self.dtime
+    }
+
+    pub fn set_delete_time(&mut self, del_time: u32) {
         self.dtime = del_time;
     }
 
     pub fn block_count(&self) -> u64 {
         let mut blocks = self.block_count as u64;
-        if self.osd2.l_i_blocks_high != 0 {
-            blocks |= (self.osd2.l_i_blocks_high as u64) << 32;
+        if self.osd2.l_blocks_hi != 0 {
+            blocks |= (self.osd2.l_blocks_hi as u64) << 32;
         }
         blocks
     }
 
     pub fn set_block_count(&mut self, cnt: u64) {
         self.block_count = cnt as u32;
-        self.osd2.l_i_blocks_high = (cnt >> 32) as u16;
+        self.osd2.l_blocks_hi = (cnt >> 32) as u16;
     }
 
     pub fn set_generation(&mut self, generation: u32) {
@@ -229,6 +279,14 @@ impl Inode {
 
     pub fn set_extra_isize(&mut self, extra_isize: u16) {
         self.extra_isize = extra_isize;
+    }
+
+    pub fn flags(&self) -> u32 {
+        self.flags
+    }
+
+    pub fn set_flags(&mut self, f: u32) {
+        self.flags |= f;
     }
 
     fn copy_to_byte_slice(&self, slice: &mut [u8]) {
@@ -345,7 +403,7 @@ impl InodeRef {
         let ino_gen = self.inode.generation;
 
         // Preparation: temporarily set bg checksum to 0
-        self.inode.osd2.l_i_checksum_lo = 0;
+        self.inode.osd2.l_checksum_lo = 0;
         self.inode.checksum_hi = 0;
 
         let mut checksum = ext4_crc32c(
@@ -366,7 +424,7 @@ impl InodeRef {
             checksum &= 0xFFFF;
         }
 
-        self.inode.osd2.l_i_checksum_lo = ((checksum << 16) >> 16) as u16;
+        self.inode.osd2.l_checksum_lo = ((checksum << 16) >> 16) as u16;
         if super_block.inode_size() > 128 {
             self.inode.checksum_hi = (checksum >> 16) as u16;
         }

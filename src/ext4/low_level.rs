@@ -75,9 +75,9 @@ impl Ext4 {
     /// TODO: handle EOF
     pub fn read(&mut self, file: InodeId, offset: usize, buf: &mut [u8]) -> Result<usize> {
         // Get the inode of the file
-        let mut inode_ref = self.read_inode(file);
-        if !inode_ref.inode.is_file() {
-            return_error!(ErrCode::EISDIR, "Inode {} is not a file", file);
+        let mut file = self.read_inode(file);
+        if !file.inode.is_file() {
+            return_error!(ErrCode::EISDIR, "Inode {} is not a file", file.id);
         }
 
         // Read no bytes
@@ -85,7 +85,7 @@ impl Ext4 {
             return Ok(0);
         }
         // Calc the actual size to read
-        let read_size = min(buf.len(), inode_ref.inode.size() as usize - offset);
+        let read_size = min(buf.len(), file.inode.size() as usize - offset);
         // Calc the start block of reading
         let start_iblock = (offset / BLOCK_SIZE) as LBlockId;
         // Calc the length that is not aligned to the block size
@@ -97,7 +97,7 @@ impl Ext4 {
         if misaligned > 0 {
             let read_len = min(BLOCK_SIZE - misaligned, read_size);
             let fblock = self
-                .extent_get_pblock(&mut inode_ref, start_iblock)
+                .extent_get_pblock(&mut file, start_iblock)
                 .unwrap();
             let block = self.read_block(fblock);
             // Copy data from block to the user buffer
@@ -108,7 +108,7 @@ impl Ext4 {
         // Continue with full block reads
         while cursor < read_size {
             let read_len = min(BLOCK_SIZE, read_size - cursor);
-            let fblock = self.extent_get_pblock(&mut inode_ref, iblock).unwrap();
+            let fblock = self.extent_get_pblock(&mut file, iblock).unwrap();
             let block = self.read_block(fblock);
             // Copy data from block to the user buffer
             buf[cursor..cursor + read_len].copy_from_slice(block.read_offset(0, read_len));
@@ -139,9 +139,9 @@ impl Ext4 {
     /// TODO: handle EOF
     pub fn write(&mut self, file: InodeId, offset: usize, data: &[u8]) -> Result<usize> {
         // Get the inode of the file
-        let mut inode = self.read_inode(file);
-        if !inode.inode.is_file() {
-            return_error!(ErrCode::EISDIR, "Inode {} is not a file", file);
+        let mut file = self.read_inode(file);
+        if !file.inode.is_file() {
+            return_error!(ErrCode::EISDIR, "Inode {} is not a file", file.id);
         }
 
         let write_size = data.len();
@@ -149,9 +149,9 @@ impl Ext4 {
         let start_iblock = (offset / BLOCK_SIZE) as LBlockId;
         let end_iblock = ((offset + write_size) / BLOCK_SIZE) as LBlockId;
         // Append enough block for writing
-        let append_block_count = (end_iblock + 1) as i64 - inode.inode.block_count() as i64;
+        let append_block_count = (end_iblock + 1) as i64 - file.inode.block_count() as i64;
         for _ in 0..append_block_count {
-            self.inode_append_block(&mut inode)?;
+            self.inode_append_block(&mut file)?;
         }
 
         // Write data
@@ -159,7 +159,7 @@ impl Ext4 {
         let mut iblock = start_iblock;
         while cursor < write_size {
             let write_len = min(BLOCK_SIZE, write_size - cursor);
-            let fblock = self.extent_get_pblock(&mut inode, iblock)?;
+            let fblock = self.extent_get_pblock(&mut file, iblock)?;
             let mut block = self.read_block(fblock);
             block.write_offset(
                 (offset + cursor) % BLOCK_SIZE,
@@ -169,8 +169,8 @@ impl Ext4 {
             cursor += write_len;
             iblock += 1;
         }
-        inode.inode.set_size((offset + cursor) as u64);
-        self.write_inode_with_csum(&mut inode);
+        file.inode.set_size((offset + cursor) as u64);
+        self.write_inode_with_csum(&mut file);
 
         Ok(cursor)
     }

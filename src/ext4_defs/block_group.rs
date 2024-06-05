@@ -44,7 +44,7 @@ pub struct BlockGroupDesc {
     reserved: u32,                   // 填充
 }
 
-impl AsBytes for BlockGroupDesc {}
+unsafe impl AsBytes for BlockGroupDesc {}
 
 impl BlockGroupDesc {
     pub fn block_bitmap_block(&self, s: &SuperBlock) -> PBlockId {

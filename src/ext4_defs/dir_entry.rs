@@ -56,7 +56,7 @@ impl Default for DirEntry {
 
 /// The actual size of the directory entry is determined by `name_len`.
 /// So we need to implement `AsBytes` methods specifically for `DirEntry`.
-impl AsBytes for DirEntry {
+unsafe impl AsBytes for DirEntry {
     fn from_bytes(bytes: &[u8]) -> Self {
         let fake_entry = FakeDirEntry::from_bytes(bytes);
         let mut entry = DirEntry {
@@ -192,7 +192,7 @@ pub struct DirEntryTail {
     pub checksum: u32, // crc32c(uuid+inum+dirblock)
 }
 
-impl AsBytes for DirEntryTail {}
+unsafe impl AsBytes for DirEntryTail {}
 
 impl DirEntryTail {
     pub fn set_csum(&mut self, s: &SuperBlock, diren: &DirEntry, blk_data: &[u8]) {
@@ -209,4 +209,4 @@ pub struct FakeDirEntry {
     inode_type: FileType,
 }
 
-impl AsBytes for FakeDirEntry {}
+unsafe impl AsBytes for FakeDirEntry {}

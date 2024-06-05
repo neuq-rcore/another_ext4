@@ -7,9 +7,7 @@ impl Ext4 {
     /// Find a directory entry that matches a given name under a parent directory
     pub(super) fn dir_find_entry(&self, dir: &InodeRef, name: &str) -> Result<DirEntry> {
         info!("Dir find entry: dir {}, name {}", dir.id, name);
-        let inode_size: u32 = dir.inode.size;
-        let total_blocks: u32 = inode_size / BLOCK_SIZE as u32;
-
+        let total_blocks: u32 = dir.inode.block_count() as u32;
         let mut iblock: LBlockId = 0;
         while iblock < total_blocks {
             // Get the fs block id
@@ -37,9 +35,8 @@ impl Ext4 {
             "Dir add entry: dir {}, child {}, name {}",
             dir.id, child.id, name
         );
-        let inode_size = dir.inode.size();
-        let total_blocks = inode_size as u32 / BLOCK_SIZE as u32;
-
+        let total_blocks: u32 = dir.inode.block_count() as u32;
+        
         // Try finding a block with enough space
         let mut iblock: LBlockId = 0;
         while iblock < total_blocks {
@@ -69,8 +66,7 @@ impl Ext4 {
     /// Remove a entry from a directory
     pub(super) fn dir_remove_entry(&mut self, dir: &mut InodeRef, name: &str) -> Result<()> {
         info!("Dir remove entry: dir {}, path {}", dir.id, name);
-        let inode_size = dir.inode.size();
-        let total_blocks = inode_size as u32 / BLOCK_SIZE as u32;
+        let total_blocks: u32 = dir.inode.block_count() as u32;
 
         // Check each block
         let mut iblock: LBlockId = 0;
@@ -95,10 +91,8 @@ impl Ext4 {
     /// Get all entries under a directory
     pub(super) fn dir_get_all_entries(&self, dir: &InodeRef) -> Vec<DirEntry> {
         info!("Dir get all entries: dir {}", dir.id);
-        let inode_size: u32 = dir.inode.size;
-        let total_blocks: u32 = inode_size / BLOCK_SIZE as u32;
+        let total_blocks = dir.inode.block_count() as u32;
         let mut entries: Vec<DirEntry> = Vec::new();
-
         let mut iblock: LBlockId = 0;
         while iblock < total_blocks {
             // Get the fs block id

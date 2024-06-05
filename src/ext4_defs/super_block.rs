@@ -112,7 +112,7 @@ pub struct SuperBlock {
     checksum: u32,             // crc32c(superblock)
 }
 
-impl AsBytes for SuperBlock {}
+unsafe impl AsBytes for SuperBlock {}
 
 impl SuperBlock {
     pub fn load_from_disk(block_device: &dyn BlockDevice) -> Self {
