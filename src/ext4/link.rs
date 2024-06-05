@@ -13,8 +13,8 @@ impl Ext4 {
         // Add entry to parent directory
         self.dir_add_entry(parent, child, name)?;
         // Update link count of child
-        let link_cnt = child.inode.links_cnt() + 1;
-        child.inode.set_links_cnt(link_cnt);
+        let link_cnt = child.inode.link_count() + 1;
+        child.inode.set_link_count(link_cnt);
         // Add '.' and '..' entries if child is a newly created directory
         if link_cnt == 1 && child.inode.is_dir() {
             let child_self = child.clone();
@@ -36,12 +36,12 @@ impl Ext4 {
         // Remove entry from parent directory
         self.dir_remove_entry(parent, name)?;
         // Update link count of child
-        let link_cnt = child.inode.links_cnt() - 1;
+        let link_cnt = child.inode.link_count() - 1;
         if link_cnt == 0 {
             // Free the inode if link count is 0
             return self.free_inode(child);
         }
-        child.inode.set_links_cnt(link_cnt);
+        child.inode.set_link_count(link_cnt);
         self.write_inode_with_csum(child);
         Ok(())
     }

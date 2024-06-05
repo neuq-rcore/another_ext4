@@ -45,27 +45,27 @@ impl Ext4 {
         // Add `.` and `..` entries
         self.dir_add_entry(&mut root, &root_self, ".")?;
         self.dir_add_entry(&mut root, &root_self, "..")?;
-        root.inode.links_count += 2;
+        root.inode.link_count += 2;
 
         self.write_inode_with_csum(&mut root);
         Ok(root)
     }
 
     /// Free an allocated inode and all data blocks allocated for it
-    pub(super) fn free_inode(&mut self, inode_ref: &mut InodeRef) -> Result<()> {
+    pub(super) fn free_inode(&mut self, inode: &mut InodeRef) -> Result<()> {
         // Free the data blocks allocated for the inode
-        let pblocks = self.extent_get_all_pblocks(&inode_ref)?;
+        let pblocks = self.extent_get_all_pblocks(&inode)?;
         for pblock in pblocks {
             // Deallocate the block
-            self.dealloc_block(inode_ref, pblock)?;
+            self.dealloc_block(inode, pblock)?;
             // Clear the block content
             self.write_block(&Block::new(pblock, [0; BLOCK_SIZE]));
         }
         // Deallocate the inode
-        self.dealloc_inode(&inode_ref)?;
+        self.dealloc_inode(&inode)?;
         // Clear the inode content
-        inode_ref.inode = unsafe { core::mem::zeroed() };
-        self.write_inode_without_csum(inode_ref);
+        inode.inode = unsafe { core::mem::zeroed() };
+        self.write_inode_without_csum(inode);
         Ok(())
     }
 
@@ -76,24 +76,26 @@ impl Ext4 {
     /// to save the inode's extent tree.
     pub(super) fn inode_append_block(
         &mut self,
-        inode_ref: &mut InodeRef,
+        inode: &mut InodeRef,
     ) -> Result<(LBlockId, PBlockId)> {
-        let inode_size = inode_ref.inode.size();
+        let inode_size = inode.inode.size();
         // The new logical block id
         let iblock = ((inode_size + BLOCK_SIZE as u64 - 1) / BLOCK_SIZE as u64) as u32;
         // Check the extent tree to get the physical block id
-        let fblock = self.extent_get_pblock_create(inode_ref, iblock, 1)?;
-        // Update the inode
-        inode_ref.inode.set_size(inode_size + BLOCK_SIZE as u64);
-        self.write_inode_with_csum(inode_ref);
+        let fblock = self.extent_get_pblock_create(inode, iblock, 1)?;
+        // Update inode block count
+        let block_count = inode.inode.block_count() + 1;
+        inode.inode.set_block_count(block_count);
+        self.write_inode_with_csum(inode);
+        
         Ok((iblock, fblock))
     }
 
     /// Allocate a new physical block for an inode, return the physical block number
-    pub(super) fn alloc_block(&mut self, inode_ref: &mut InodeRef) -> Result<PBlockId> {
+    pub(super) fn alloc_block(&mut self, inode: &mut InodeRef) -> Result<PBlockId> {
         // Calc block group id
         let inodes_per_group = self.super_block.inodes_per_group();
-        let bgid = ((inode_ref.id - 1) / inodes_per_group) as BlockGroupId;
+        let bgid = ((inode.id - 1) / inodes_per_group) as BlockGroupId;
 
         // Load block group descriptor
         let mut bg = self.read_block_group(bgid);
@@ -122,9 +124,9 @@ impl Ext4 {
         self.write_super_block();
 
         // Update inode blocks (different block size!) count
-        let inode_blocks = inode_ref.inode.blocks_count() + (BLOCK_SIZE / INODE_BLOCK_SIZE) as u64;
-        inode_ref.inode.set_blocks_count(inode_blocks);
-        self.write_inode_with_csum(inode_ref);
+        let inode_blocks = inode.inode.block_count() + (BLOCK_SIZE / INODE_BLOCK_SIZE) as u64;
+        inode.inode.set_block_count(inode_blocks);
+        self.write_inode_with_csum(inode);
 
         // Update block group free blocks count
         let fb_cnt = bg.desc.get_free_blocks_count() - 1;
@@ -139,12 +141,12 @@ impl Ext4 {
     /// Deallocate a physical block allocated for an inode
     pub(super) fn dealloc_block(
         &mut self,
-        inode_ref: &mut InodeRef,
+        inode: &mut InodeRef,
         pblock: PBlockId,
     ) -> Result<()> {
         // Calc block group id
         let inodes_per_group = self.super_block.inodes_per_group();
-        let bgid = ((inode_ref.id - 1) / inodes_per_group) as BlockGroupId;
+        let bgid = ((inode.id - 1) / inodes_per_group) as BlockGroupId;
 
         // Load block group descriptor
         let mut bg = self.read_block_group(bgid);
@@ -170,9 +172,9 @@ impl Ext4 {
         self.write_super_block();
 
         // Update inode blocks (different block size!) count
-        let inode_blocks = inode_ref.inode.blocks_count() - (BLOCK_SIZE / INODE_BLOCK_SIZE) as u64;
-        inode_ref.inode.set_blocks_count(inode_blocks);
-        self.write_inode_with_csum(inode_ref);
+        let inode_blocks = inode.inode.block_count() - (BLOCK_SIZE / INODE_BLOCK_SIZE) as u64;
+        inode.inode.set_block_count(inode_blocks);
+        self.write_inode_with_csum(inode);
 
         // Update block group free blocks count
         let fb_cnt = bg.desc.get_free_blocks_count() + 1;

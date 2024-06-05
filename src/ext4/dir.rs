@@ -114,7 +114,7 @@ impl Ext4 {
 
     /// Find a directory entry that matches a given name in a given block
     fn find_entry_in_block(block: &Block, name: &str) -> Option<DirEntry> {
-        info!("Dir find entry {} in block {}", name, block.block_id);
+        info!("Dir find entry {} in block {}", name, block.id);
         let mut offset = 0;
         while offset < BLOCK_SIZE {
             let de: DirEntry = block.read_offset_as(offset);
@@ -128,7 +128,7 @@ impl Ext4 {
 
     /// Remove a directory entry that matches a given name from a given block
     fn remove_entry_from_block(block: &mut Block, name: &str) -> bool {
-        info!("Dir remove entry {} from block {}", name, block.block_id);
+        info!("Dir remove entry {} from block {}", name, block.id);
         let mut offset = 0;
         while offset < BLOCK_SIZE {
             let mut de: DirEntry = block.read_offset_as(offset);
@@ -145,7 +145,7 @@ impl Ext4 {
 
     /// Get all directory entries from a given block
     fn get_all_entries_from_block(block: &Block, entries: &mut Vec<DirEntry>) {
-        info!("Dir get all entries from block {}", block.block_id);
+        info!("Dir get all entries from block {}", block.id);
         let mut offset = 0;
         while offset < BLOCK_SIZE {
             let de: DirEntry = block.read_offset_as(offset);

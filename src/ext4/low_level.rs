@@ -80,15 +80,12 @@ impl Ext4 {
             return_error!(ErrCode::EISDIR, "Inode {} is not a file", file);
         }
 
-        let read_size = buf.len();
         // Read no bytes
-        if read_size == 0 {
+        if buf.len() == 0 {
             return Ok(0);
         }
-        // Get file size
-        let fsize = inode_ref.inode.size();
         // Calc the actual size to read
-        let size_to_read = min(read_size, fsize as usize - offset);
+        let read_size = min(buf.len(), inode_ref.inode.size() as usize - offset);
         // Calc the start block of reading
         let start_iblock = (offset / BLOCK_SIZE) as LBlockId;
         // Calc the length that is not aligned to the block size
@@ -98,7 +95,7 @@ impl Ext4 {
         let mut iblock = start_iblock;
         // Read first block
         if misaligned > 0 {
-            let read_len = min(BLOCK_SIZE - misaligned, size_to_read);
+            let read_len = min(BLOCK_SIZE - misaligned, read_size);
             let fblock = self
                 .extent_get_pblock(&mut inode_ref, start_iblock)
                 .unwrap();
@@ -109,8 +106,8 @@ impl Ext4 {
             iblock += 1;
         }
         // Continue with full block reads
-        while cursor < size_to_read {
-            let read_len = min(BLOCK_SIZE, size_to_read - cursor);
+        while cursor < read_size {
+            let read_len = min(BLOCK_SIZE, read_size - cursor);
             let fblock = self.extent_get_pblock(&mut inode_ref, iblock).unwrap();
             let block = self.read_block(fblock);
             // Copy data from block to the user buffer
@@ -142,21 +139,19 @@ impl Ext4 {
     /// TODO: handle EOF
     pub fn write(&mut self, file: InodeId, offset: usize, data: &[u8]) -> Result<usize> {
         // Get the inode of the file
-        let mut inode_ref = self.read_inode(file);
-        if !inode_ref.inode.is_file() {
+        let mut inode = self.read_inode(file);
+        if !inode.inode.is_file() {
             return_error!(ErrCode::EISDIR, "Inode {} is not a file", file);
         }
 
         let write_size = data.len();
-        // Calc the start and end block of reading
+        // Calc the start and end block of writing
         let start_iblock = (offset / BLOCK_SIZE) as LBlockId;
         let end_iblock = ((offset + write_size) / BLOCK_SIZE) as LBlockId;
-        // Calc the block count of the file
-        let block_count = (offset as usize + BLOCK_SIZE - 1) / BLOCK_SIZE;
         // Append enough block for writing
-        let append_block_count = end_iblock + 1 - block_count as LBlockId;
+        let append_block_count = (end_iblock + 1) as i64 - inode.inode.block_count() as i64;
         for _ in 0..append_block_count {
-            self.inode_append_block(&mut inode_ref)?;
+            self.inode_append_block(&mut inode)?;
         }
 
         // Write data
@@ -164,17 +159,18 @@ impl Ext4 {
         let mut iblock = start_iblock;
         while cursor < write_size {
             let write_len = min(BLOCK_SIZE, write_size - cursor);
-            let fblock = self.extent_get_pblock(&mut inode_ref, iblock)?;
+            let fblock = self.extent_get_pblock(&mut inode, iblock)?;
             let mut block = self.read_block(fblock);
             block.write_offset(
                 (offset + cursor) % BLOCK_SIZE,
                 &data[cursor..cursor + write_len],
             );
             self.write_block(&block);
-
             cursor += write_len;
             iblock += 1;
         }
+        inode.inode.set_size((offset + cursor) as u64);
+        self.write_inode_with_csum(&mut inode);
 
         Ok(cursor)
     }

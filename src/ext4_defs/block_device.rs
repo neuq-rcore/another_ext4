@@ -21,7 +21,7 @@ where
 /// Common data block descriptor
 pub struct Block {
     /// Physical block id
-    pub block_id: PBlockId,
+    pub id: PBlockId,
     /// Raw block data
     pub data: [u8; BLOCK_SIZE],
 }
@@ -29,7 +29,7 @@ pub struct Block {
 impl Default for Block {
     fn default() -> Self {
         Self {
-            block_id: 0,
+            id: 0,
             data: [0; BLOCK_SIZE],
         }
     }
@@ -38,7 +38,7 @@ impl Default for Block {
 impl Block {
     /// Create new block with given physical block id and data
     pub fn new(block_id: PBlockId, data: [u8; BLOCK_SIZE]) -> Self {
-        Self { block_id, data }
+        Self { id: block_id, data }
     }
 
     /// Read `size` bytes from `offset` in block data
