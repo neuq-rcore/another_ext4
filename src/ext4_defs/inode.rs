@@ -63,8 +63,8 @@ impl InodeMode {
         }) | (perm & InodeMode::PERM_MASK)
     }
     /// Get permission bits of an inode mode.
-    pub fn perm_bits(&self) -> u16 {
-        (*self & InodeMode::PERM_MASK).bits() as u16
+    pub fn perm(&self) -> InodeMode {
+        *self & InodeMode::PERM_MASK
     }
     /// Get the file type of an inode mode.
     pub fn file_type(&self) -> FileType {
@@ -81,8 +81,24 @@ impl InodeMode {
     }
 }
 
+#[derive(Debug, Clone)]
+pub struct FileAttr {
+    pub ino: InodeId,
+    pub size: u64,
+    pub atime: u32,
+    pub mtime: u32,
+    pub ctime: u32,
+    pub crtime: u32,
+    pub blocks: u64,
+    pub ftype: FileType,
+    pub perm: InodeMode,
+    pub links: u16,
+    pub uid: u32,
+    pub gid: u32,
+}
+
 #[repr(C)]
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 pub struct Linux2 {
     /// Upper 16-bits of the block count. See the note attached to i_blocks_lo.
     pub l_blocks_hi: u16,
@@ -99,7 +115,7 @@ pub struct Linux2 {
 }
 
 #[repr(C)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 pub struct Inode {
     /// File mode.
     mode: u16,
@@ -195,6 +211,10 @@ impl Inode {
         self.file_type() == FileType::SymLink
     }
 
+    pub fn perm(&self) -> InodeMode {
+        self.mode().perm()
+    }
+
     pub fn link_count(&self) -> u16 {
         self.link_count
     }
@@ -203,20 +223,22 @@ impl Inode {
         self.link_count = cnt;
     }
 
-    pub fn uid(&self) -> u16 {
-        self.uid
+    pub fn uid(&self) -> u32 {
+        self.uid as u32 | ((self.osd2.l_uid_hi as u32) << 16)
     }
 
-    pub fn set_uid(&mut self, uid: u16) {
-        self.uid = uid;
+    pub fn set_uid(&mut self, uid: u32) {
+        self.uid = uid as u16;
+        self.osd2.l_uid_hi = (uid >> 16) as u16;
     }
 
-    pub fn gid(&self) -> u16 {
-        self.gid
+    pub fn gid(&self) -> u32 {
+        self.gid as u32 | ((self.osd2.l_gid_hi as u32) << 16)
     }
 
-    pub fn set_gid(&mut self, gid: u16) {
-        self.gid = gid;
+    pub fn set_gid(&mut self, gid: u32) {
+        self.gid = gid as u16;
+        self.osd2.l_gid_hi = (gid >> 16) as u16;
     }
 
     pub fn size(&self) -> u64 {
@@ -228,36 +250,44 @@ impl Inode {
         self.size_hi = (size >> 32) as u32;
     }
 
-    pub fn access_time(&self) -> u32 {
+    pub fn atime(&self) -> u32 {
         self.atime
     }
 
-    pub fn set_access_time(&mut self, access_time: u32) {
-        self.atime = access_time;
+    pub fn set_atime(&mut self, atime: u32) {
+        self.atime = atime;
     }
 
-    pub fn change_time(&self) -> u32 {
+    pub fn ctime(&self) -> u32 {
         self.ctime
     }
 
-    pub fn set_change_time(&mut self, change_time: u32) {
-        self.ctime = change_time;
+    pub fn set_ctime(&mut self, ctime: u32) {
+        self.ctime = ctime;
     }
 
-    pub fn modify_time(&self) -> u32 {
+    pub fn mtime(&self) -> u32 {
         self.mtime
     }
 
-    pub fn set_modify_time(&mut self, modif_time: u32) {
-        self.mtime = modif_time;
+    pub fn set_mtime(&mut self, mtime: u32) {
+        self.mtime = mtime;
     }
 
-    pub fn delete_time(&self) -> u32 {
+    pub fn dtime(&self) -> u32 {
         self.dtime
     }
 
-    pub fn set_delete_time(&mut self, del_time: u32) {
-        self.dtime = del_time;
+    pub fn set_dtime(&mut self, dtime: u32) {
+        self.dtime = dtime;
+    }
+
+    pub fn crtime(&self) -> u32 {
+        self.crtime
+    }
+
+    pub fn set_crtime(&mut self, crtime: u32) {
+        self.crtime = crtime;
     }
 
     pub fn block_count(&self) -> u64 {

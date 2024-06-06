@@ -54,7 +54,7 @@ impl Ext4 {
         flags: OpenFlags,
     ) -> Result<FileHandler> {
         let inode_id = self.generic_lookup(root, path)?;
-        let inode = self.inode(inode_id);
+        let inode = self.read_inode(inode_id);
         // Check file type
         if !inode.inode.is_file() {
             return_error!(ErrCode::EISDIR, "File {} is not a regular file", path);

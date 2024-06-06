@@ -11,7 +11,7 @@ use crate::return_error;
 use core::cmp::min;
 
 impl Ext4 {
-    /// Read an indoe
+    /// Get file attributes.
     ///
     /// # Params
     ///
@@ -19,9 +19,91 @@ impl Ext4 {
     ///
     /// # Return
     ///
-    /// An inode reference, combing id and the inode itself
-    pub fn inode(&self, id: InodeId) -> InodeRef {
-        self.read_inode(id)
+    /// A file attribute struct.
+    ///
+    /// # Error
+    ///
+    /// `EINVAL` if the inode is invalid (mode == 0).
+    pub fn getattr(&self, id: InodeId) -> Result<FileAttr> {
+        let inode = self.read_inode(id);
+        if inode.inode.mode().bits() == 0 {
+            return_error!(ErrCode::EINVAL, "Invalid inode");
+        }
+        Ok(FileAttr {
+            ino: id,
+            size: inode.inode.size(),
+            blocks: inode.inode.block_count(),
+            atime: inode.inode.atime(),
+            mtime: inode.inode.mtime(),
+            ctime: inode.inode.ctime(),
+            crtime: inode.inode.crtime(),
+            ftype: inode.inode.file_type(),
+            perm: inode.inode.perm(),
+            links: inode.inode.link_count(),
+            uid: inode.inode.uid(),
+            gid: inode.inode.gid(),
+        })
+    }
+
+    /// Set file attributes.
+    ///
+    /// # Params
+    ///
+    /// * `id` - inode id
+    /// * `mode` - file mode
+    /// * `uid` - 32-bit user id
+    /// * `gid` - 32-bit group id
+    /// * `size` - 64-bit file size
+    /// * `atime` - 32-bit access time in seconds
+    /// * `mtime` - 32-bit modify time in seconds
+    /// * `ctime` - 32-bit change time in seconds
+    /// * `crtime` - 32-bit create time in seconds
+    ///
+    /// # Error
+    ///
+    /// `EINVAL` if the inode is invalid (mode == 0).
+    pub fn setattr(
+        &mut self,
+        id: InodeId,
+        mode: Option<InodeMode>,
+        uid: Option<u32>,
+        gid: Option<u32>,
+        size: Option<u64>,
+        atime: Option<u32>,
+        mtime: Option<u32>,
+        ctime: Option<u32>,
+        crtime: Option<u32>,
+    ) -> Result<()> {
+        let mut inode = self.read_inode(id);
+        if inode.inode.mode().bits() == 0 {
+            return_error!(ErrCode::EINVAL, "Invalid inode");
+        }
+        if let Some(mode) = mode {
+            inode.inode.set_mode(mode);
+        }
+        if let Some(uid) = uid {
+            inode.inode.set_uid(uid);
+        }
+        if let Some(gid) = gid {
+            inode.inode.set_gid(gid);
+        }
+        if let Some(size) = size {
+            inode.inode.set_size(size);
+        }
+        if let Some(atime) = atime {
+            inode.inode.set_atime(atime);
+        }
+        if let Some(mtime) = mtime {
+            inode.inode.set_mtime(mtime);
+        }
+        if let Some(ctime) = ctime {
+            inode.inode.set_ctime(ctime);
+        }
+        if let Some(crtime) = crtime {
+            inode.inode.set_crtime(crtime);
+        }
+        self.write_inode_with_csum(&mut inode);
+        Ok(())
     }
 
     /// Create and open a file. This function will not check the existence
@@ -71,8 +153,6 @@ impl Ext4 {
     /// # Error
     ///
     /// * `EISDIR` - `file` is not a regular file
-    ///
-    /// TODO: handle EOF
     pub fn read(&mut self, file: InodeId, offset: usize, buf: &mut [u8]) -> Result<usize> {
         // Get the inode of the file
         let mut file = self.read_inode(file);
@@ -96,9 +176,7 @@ impl Ext4 {
         // Read first block
         if misaligned > 0 {
             let read_len = min(BLOCK_SIZE - misaligned, read_size);
-            let fblock = self
-                .extent_get_pblock(&mut file, start_iblock)
-                .unwrap();
+            let fblock = self.extent_get_pblock(&mut file, start_iblock).unwrap();
             let block = self.read_block(fblock);
             // Copy data from block to the user buffer
             buf[cursor..cursor + read_len].copy_from_slice(block.read_offset(misaligned, read_len));
@@ -134,9 +212,7 @@ impl Ext4 {
     /// # Error
     ///
     /// * `EISDIR` - `file` is not a regular file
-    /// `ENOSPC` - no space left on device
-    ///
-    /// TODO: handle EOF
+    /// * `ENOSPC` - no space left on device
     pub fn write(&mut self, file: InodeId, offset: usize, data: &[u8]) -> Result<usize> {
         // Get the inode of the file
         let mut file = self.read_inode(file);
@@ -183,15 +259,11 @@ impl Ext4 {
     /// * `child` - the inode of the file to link
     /// * `parent` - the inode of the directory to link to
     ///
-    /// # Return
-    ///
-    /// `Ok(child)` - An inode reference to the child inode.
-    ///
     /// # Error
     ///
     /// * `ENOTDIR` - `parent` is not a directory
     /// * `ENOSPC` - no space left on device
-    pub fn link(&mut self, child: InodeId, parent: InodeId, name: &str) -> Result<InodeRef> {
+    pub fn link(&mut self, child: InodeId, parent: InodeId, name: &str) -> Result<()> {
         let mut parent = self.read_inode(parent);
         // Can only link to a directory
         if !parent.inode.is_dir() {
@@ -199,7 +271,7 @@ impl Ext4 {
         }
         let mut child = self.read_inode(child);
         self.link_inode(&mut parent, &mut child, name)?;
-        Ok(child)
+        Ok(())
     }
 
     /// Unlink a file.
@@ -277,13 +349,13 @@ impl Ext4 {
     ///
     /// # Return
     ///
-    /// `Ok(child)` - An inode reference to the new directory.
+    /// `Ok(child)` - the inode id of the created directory
     ///
     /// # Error
     ///
     /// * `ENOTDIR` - `parent` is not a directory
     /// * `ENOSPC` - no space left on device
-    pub fn mkdir(&mut self, parent: InodeId, name: &str, mode: InodeMode) -> Result<InodeRef> {
+    pub fn mkdir(&mut self, parent: InodeId, name: &str, mode: InodeMode) -> Result<InodeId> {
         let mut parent = self.read_inode(parent);
         // Can only create a directory in a directory
         if !parent.inode.is_dir() {
@@ -294,8 +366,7 @@ impl Ext4 {
         let mut child = self.create_inode(mode)?;
         // Link the new inode
         self.link_inode(&mut parent, &mut child, name)?;
-
-        Ok(child)
+        Ok(child.id)
     }
 
     /// Look up a directory entry by name.
@@ -307,7 +378,7 @@ impl Ext4 {
     ///
     /// # Return
     ///
-    /// `Ok(child)`: The inode id to which the directory entry points.
+    /// `Ok(child)`- the inode id to which the directory entry points.
     ///
     /// # Error
     ///
@@ -331,7 +402,7 @@ impl Ext4 {
     ///
     /// # Return
     ///
-    /// `Ok(entries)` - A vector of directory entries in the directory.
+    /// `Ok(entries)` - a vector of directory entries in the directory.
     ///
     /// # Error
     ///
