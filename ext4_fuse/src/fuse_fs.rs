@@ -10,11 +10,13 @@
 //! See `fuse_lowlevel_ops` in C FUSE library for details.
 //! https://libfuse.github.io/doxygen/structfuse__lowlevel__ops.html
 
-use super::common::{translate_ftype, DirHandler, FileHandler, FuseInode};
-use ext4_rs::{DirEntry, ErrCode, Ext4, InodeMode, OpenFlags};
+use super::common::{
+    sys_time2second, time_or_now2second, translate_attr, translate_ftype, DirHandler, FileHandler,
+};
+use ext4_rs::{DirEntry, ErrCode, Ext4, Ext4Error, InodeMode, OpenFlags};
 use fuser::{
-    Filesystem, ReplyAttr, ReplyCreate, ReplyData, ReplyEmpty, ReplyEntry, ReplyOpen, ReplyWrite,
-    Request,
+    FileAttr, FileType, Filesystem, ReplyAttr, ReplyCreate, ReplyData, ReplyEmpty, ReplyEntry,
+    ReplyOpen, ReplyWrite, Request,
 };
 use std::ffi::OsStr;
 use std::time::Duration;
@@ -41,43 +43,83 @@ impl Ext4FuseFs {
     }
 
     /// Add a file handler to file list
-    pub fn add_file(&mut self, inode: u32, flags: OpenFlags) -> FId {
+    fn add_file(&mut self, inode: u32, flags: OpenFlags) -> FId {
         self.files
             .push(FileHandler::new(self.next_did, inode, flags));
         self.next_fid += 1;
         self.next_fid - 1
     }
 
-    pub fn release_file(&mut self, fh: FId) {
+    fn release_file(&mut self, fh: FId) {
         self.files.retain(|f| f.id != fh);
     }
 
     /// Add a directory handler to directory list
-    pub fn add_dir(&mut self, entries: Vec<DirEntry>) -> FId {
+    fn add_dir(&mut self, entries: Vec<DirEntry>) -> FId {
         self.dirs.push(DirHandler::new(self.next_did, entries));
         self.next_did += 1;
         self.next_did - 1
     }
 
-    pub fn release_dir(&mut self, did: FId) {
+    fn release_dir(&mut self, did: FId) {
         self.dirs.retain(|d| d.id != did);
+    }
+
+    fn get_attr(&self, inode: u32) -> Result<FileAttr, Ext4Error> {
+        match self.fs.getattr(inode) {
+            Ok(attr) => Ok(translate_attr(attr)),
+            Err(e) => Err(e),
+        }
     }
 }
 
 impl Filesystem for Ext4FuseFs {
     fn lookup(&mut self, _req: &Request<'_>, parent: u64, name: &OsStr, reply: ReplyEntry) {
         match self.fs.lookup(parent as u32, name.to_str().unwrap()) {
-            Ok(inode_id) => {
-                let inode = self.fs.inode(inode_id);
-                reply.entry(&get_ttl(), &FuseInode(inode).get_attr(), 0)
-            }
+            Ok(inode_id) => reply.entry(&get_ttl(), &self.get_attr(inode_id).unwrap(), 0),
             Err(e) => reply.error(e.code() as i32),
         }
     }
 
     fn getattr(&mut self, _req: &Request<'_>, ino: u64, reply: ReplyAttr) {
-        let inode = self.fs.inode(ino as u32);
-        reply.attr(&get_ttl(), &FuseInode(inode).get_attr())
+        match self.get_attr(ino as u32) {
+            Ok(attr) => reply.attr(&get_ttl(), &attr),
+            Err(e) => reply.error(e.code() as i32),
+        }
+    }
+
+    fn setattr(
+        &mut self,
+        _req: &Request<'_>,
+        ino: u64,
+        mode: Option<u32>,
+        uid: Option<u32>,
+        gid: Option<u32>,
+        size: Option<u64>,
+        atime: Option<fuser::TimeOrNow>,
+        mtime: Option<fuser::TimeOrNow>,
+        ctime: Option<std::time::SystemTime>,
+        _fh: Option<u64>,
+        crtime: Option<std::time::SystemTime>,
+        _chgtime: Option<std::time::SystemTime>,
+        _bkuptime: Option<std::time::SystemTime>,
+        _flags: Option<u32>,
+        reply: ReplyAttr,
+    ) {
+        match self.fs.setattr(
+            ino as u32,
+            mode.map(|m| InodeMode::from_bits_truncate(m as u16)),
+            uid,
+            gid,
+            size,
+            atime.map(|t| time_or_now2second(t)),
+            mtime.map(|t| time_or_now2second(t)),
+            ctime.map(|t| sys_time2second(t)),
+            crtime.map(|t| sys_time2second(t)),
+        ) {
+            Ok(_) => reply.attr(&get_ttl(), &self.get_attr(ino as u32).unwrap()),
+            Err(e) => reply.error(e.code() as i32),
+        }
     }
 
     fn create(
@@ -97,17 +139,21 @@ impl Filesystem for Ext4FuseFs {
         ) {
             Ok(ino) => {
                 let fid = self.add_file(ino, OpenFlags::from_bits_truncate(flags as u32));
-                let inode = self.fs.inode(ino);
-                reply.created(&get_ttl(), &FuseInode(inode).get_attr(), 0, fid, 0);
+                reply.created(&get_ttl(), &self.get_attr(ino).unwrap(), 0, fid, 0);
             }
             Err(e) => reply.error(e.code() as i32),
         }
     }
 
     fn open(&mut self, _req: &Request<'_>, ino: u64, flags: i32, reply: ReplyOpen) {
-        let inode = self.fs.inode(ino as u32);
-        if !inode.inode.is_file() {
-            return reply.error(ErrCode::EISDIR as i32);
+        let attr = self.get_attr(ino as u32);
+        match attr {
+            Ok(attr) => {
+                if attr.kind != FileType::RegularFile {
+                    return reply.error(ErrCode::EISDIR as i32);
+                }
+            }
+            Err(e) => return reply.error(e.code() as i32),
         }
         let fid = self.add_file(ino as u32, OpenFlags::from_bits_truncate(flags as u32));
         reply.opened(fid, 0);
@@ -179,13 +225,34 @@ impl Filesystem for Ext4FuseFs {
             .fs
             .link(ino as u32, newparent as u32, newname.to_str().unwrap())
         {
-            Ok(inode) => reply.entry(&get_ttl(), &FuseInode(inode).get_attr(), 0),
+            Ok(_) => reply.entry(&get_ttl(), &self.get_attr(ino as u32).unwrap(), 0),
             Err(e) => reply.error(e.code() as i32),
         }
     }
 
     fn unlink(&mut self, _req: &Request<'_>, parent: u64, name: &OsStr, reply: ReplyEmpty) {
         match self.fs.unlink(parent as u32, name.to_str().unwrap()) {
+            Ok(_) => reply.ok(),
+            Err(e) => reply.error(e.code() as i32),
+        }
+    }
+
+    fn rename(
+        &mut self,
+        _req: &Request<'_>,
+        parent: u64,
+        name: &OsStr,
+        newparent: u64,
+        newname: &OsStr,
+        _flags: u32,
+        reply: ReplyEmpty,
+    ) {
+        match self.fs.rename(
+            parent as u32,
+            name.to_str().unwrap(),
+            newparent as u32,
+            newname.to_str().unwrap(),
+        ) {
             Ok(_) => reply.ok(),
             Err(e) => reply.error(e.code() as i32),
         }
@@ -205,7 +272,7 @@ impl Filesystem for Ext4FuseFs {
             name.to_str().unwrap(),
             InodeMode::from_bits_truncate(mode as u16),
         ) {
-            Ok(inode) => reply.entry(&get_ttl(), &FuseInode(inode).get_attr(), 0),
+            Ok(ino) => reply.entry(&get_ttl(), &self.get_attr(ino).unwrap(), 0),
             Err(e) => reply.error(e.code() as i32),
         }
     }
@@ -237,11 +304,10 @@ impl Filesystem for Ext4FuseFs {
                         break;
                     }
                     let entry = entry.unwrap();
-                    let inode = self.fs.inode(entry.inode());
                     if reply.add(
                         ino,
                         dir.cur as i64,
-                        translate_ftype(inode.inode.file_type()),
+                        translate_ftype(self.fs.getattr(entry.inode()).unwrap().ftype),
                         entry.name().unwrap(),
                     ) {
                         break;

@@ -29,7 +29,7 @@ impl BlockDevice for BlockFile {
     fn write_block(&self, block: &Block) {
         let mut file = &self.0;
         // warn!("write_block {}", block.block_id);
-        let _r = file.seek(SeekFrom::Start(block.block_id * BLOCK_SIZE as u64));
+        let _r = file.seek(SeekFrom::Start(block.id * BLOCK_SIZE as u64));
         let _r = file.write_all(&block.data);
     }
 }

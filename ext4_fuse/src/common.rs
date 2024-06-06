@@ -1,33 +1,8 @@
 use ext4_rs::{
-    DirEntry, FileType as Ext4FileType, InodeRef, OpenFlags, INODE_BLOCK_SIZE,
+    DirEntry, FileAttr as Ext4FileAttr, FileType as Ext4FileType, OpenFlags, INODE_BLOCK_SIZE,
 };
-use fuser::{FileAttr, FileType};
-use std::time::{Duration, SystemTime};
-
-/// A wrapper of ext4_rs::InodeRef
-pub struct FuseInode(pub InodeRef);
-
-impl FuseInode {
-    pub fn get_attr(&self) -> FileAttr {
-        FileAttr {
-            ino: self.0.id as u64,
-            size: self.0.inode.size(),
-            blocks: self.0.inode.blocks_count(),
-            atime: get_time(self.0.inode.atime as u64),
-            mtime: get_time(self.0.inode.mtime as u64),
-            ctime: get_time(self.0.inode.ctime as u64),
-            crtime: SystemTime::UNIX_EPOCH,
-            kind: translate_ftype(self.0.inode.file_type()),
-            perm: self.0.inode.mode().perm_bits(),
-            nlink: self.0.inode.links_cnt() as u32,
-            uid: self.0.inode.uid as u32,
-            gid: self.0.inode.gid as u32,
-            rdev: 0,
-            blksize: INODE_BLOCK_SIZE as u32,
-            flags: 0,
-        }
-    }
-}
+use fuser::{FileAttr, FileType, TimeOrNow};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 /// File handler for fuse filesystem
 pub struct FileHandler {
@@ -79,15 +54,46 @@ pub fn translate_ftype(file_type: Ext4FileType) -> FileType {
     match file_type {
         Ext4FileType::RegularFile => FileType::RegularFile,
         Ext4FileType::Directory => FileType::Directory,
-        Ext4FileType::SymLink => FileType::Symlink,
         Ext4FileType::CharacterDev => FileType::CharDevice,
         Ext4FileType::BlockDev => FileType::BlockDevice,
         Ext4FileType::Fifo => FileType::NamedPipe,
         Ext4FileType::Socket => FileType::Socket,
+        Ext4FileType::SymLink => FileType::Symlink,
         Ext4FileType::Unknown => FileType::RegularFile,
     }
 }
 
-fn get_time(time: u64) -> SystemTime {
-    SystemTime::UNIX_EPOCH + Duration::from_secs(time)
+pub fn translate_attr(attr: Ext4FileAttr) -> FileAttr {
+    FileAttr {
+        ino: attr.ino as u64,
+        size: attr.size,
+        blocks: attr.blocks,
+        atime: second2sys_time(attr.atime),
+        mtime: second2sys_time(attr.mtime),
+        ctime: second2sys_time(attr.ctime),
+        crtime: second2sys_time(attr.crtime),
+        kind: translate_ftype(attr.ftype),
+        perm: attr.perm.bits(),
+        nlink: attr.links as u32,
+        uid: attr.uid,
+        gid: attr.gid,
+        rdev: 0,
+        blksize: INODE_BLOCK_SIZE as u32,
+        flags: 0,
+    }
+}
+
+pub fn sys_time2second(time: SystemTime) -> u32 {
+    time.duration_since(UNIX_EPOCH).unwrap().as_secs() as u32
+}
+
+pub fn second2sys_time(time: u32) -> SystemTime {
+    SystemTime::UNIX_EPOCH + Duration::from_secs(time as u64)
+}
+
+pub fn time_or_now2second(time_or_now: TimeOrNow) -> u32 {
+    match time_or_now {
+        fuser::TimeOrNow::Now => sys_time2second(SystemTime::now()),
+        fuser::TimeOrNow::SpecificTime(time) => sys_time2second(time),
+    }
 }

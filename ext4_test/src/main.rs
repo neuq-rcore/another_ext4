@@ -64,13 +64,13 @@ fn read_write_test(ext4: &mut Ext4) {
         .expect("open failed");
     ext4.write(wfile.inode, 0, wbuffer).expect("write failed");
 
-    let mut rbuffer = vec![0u8; wbuffer.len()];
+    let mut rbuffer = vec![0u8; wbuffer.len() + 100]; // Test end of file
     let rfile = ext4
         .generic_open(ROOT_INO, "d3/f0", OpenFlags::O_RDONLY)
         .expect("open failed");
-    ext4.read(wfile.inode, 0, &mut rbuffer).expect("read failed");
+    let rcount = ext4.read(rfile.inode, 0, &mut rbuffer).expect("read failed");
 
-    assert_eq!(wbuffer, rbuffer);
+    assert_eq!(wbuffer, &rbuffer[..rcount]);
 }
 
 fn large_read_write_test(ext4: &mut Ext4) {
@@ -84,9 +84,9 @@ fn large_read_write_test(ext4: &mut Ext4) {
         .generic_open(ROOT_INO, "d3/f1", OpenFlags::O_RDONLY)
         .expect("open failed");
     let mut rbuffer = vec![0u8; wbuffer.len()];
-    ext4.read(rfile.inode, 0,&mut rbuffer).expect("read failed");
+    let rcount = ext4.read(rfile.inode, 0,&mut rbuffer).expect("read failed");
 
-    assert_eq!(wbuffer, rbuffer);
+    assert_eq!(wbuffer, &rbuffer[..rcount]);
 }
 
 fn remove_file_test(ext4: &mut Ext4) {
