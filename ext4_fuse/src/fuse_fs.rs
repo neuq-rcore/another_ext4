@@ -337,6 +337,28 @@ impl Filesystem for Ext4FuseFs {
             Err(e) => reply.error(e.code() as i32),
         }
     }
+
+    fn access(&mut self, req: &Request<'_>, ino: u64, mask: i32, reply: ReplyEmpty) {
+        let attr = self.fs.getattr(ino as u32).unwrap();
+        let mask = mask as u16;
+        // Check other
+        if attr.perm.contains(InodeMode::from_bits_truncate(mask)) {
+            return reply.ok();
+        }
+        // Check group
+        if attr.gid == req.gid() {
+            if attr.perm.contains(InodeMode::from_bits_truncate(mask << 3)) {
+                return reply.ok();
+            }
+        }
+        // Check user
+        if attr.uid == req.uid() {
+            if attr.perm.contains(InodeMode::from_bits_truncate(mask << 6)) {
+                return reply.ok();
+            }
+        }
+        reply.error(ErrCode::EACCES as i32);
+    }
 }
 
 fn get_ttl() -> Duration {
