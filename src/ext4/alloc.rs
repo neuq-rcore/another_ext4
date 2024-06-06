@@ -53,10 +53,21 @@ impl Ext4 {
     /// Free an allocated inode and all data blocks allocated for it
     pub(super) fn free_inode(&mut self, inode: &mut InodeRef) -> Result<()> {
         // Free the data blocks allocated for the inode
-        let pblocks = self.extent_get_all_pblocks(&inode)?;
+        let pblocks = self.extent_all_data_blocks(&inode);
         for pblock in pblocks {
             // Deallocate the block
             self.dealloc_block(inode, pblock)?;
+            // Update inode block count
+            inode.inode.set_block_count(inode.inode.block_count() - 1); 
+            // Clear the block content
+            self.write_block(&Block::new(pblock, [0; BLOCK_SIZE]));
+        }
+        // Free extent tree
+        let pblocks = self.extent_all_tree_blocks(&inode);
+        for pblock in pblocks {
+            // Deallocate the block
+            self.dealloc_block(inode, pblock)?;
+            // Tree blocks are not counted in `inode.block_count`
             // Clear the block content
             self.write_block(&Block::new(pblock, [0; BLOCK_SIZE]));
         }
@@ -69,24 +80,29 @@ impl Ext4 {
     }
 
     /// Append a data block for an inode, return a pair of (logical block id, physical block id)
-    ///
-    /// Only data blocks allocated by `inode_append_block` will be counted in `inode.size`. Blocks
-    /// allocated by calling `alloc_block` directly will not be counted, e.g. blocks allocated
-    /// to save the inode's extent tree.
+    /// 
+    /// Only data blocks allocated by `inode_append_block` will be counted in `inode.block_count`. 
+    /// Blocks allocated by calling `alloc_block` directly will not be counted, i.e., blocks
+    /// allocated for the inode's extent tree.
+    /// 
+    /// Appending a block does not increase `inode.size`, because `inode.size` records the actual
+    /// size of the data content, not the number of blocks allocated for it. 
+    /// 
+    /// If the inode is a file, `inode.size` will be increased when writing to end of the file.
+    /// If the inode is a directory, `inode.size` will be increased when adding a new entry to the
+    /// newly created block.
     pub(super) fn inode_append_block(
         &mut self,
         inode: &mut InodeRef,
     ) -> Result<(LBlockId, PBlockId)> {
-        let inode_size = inode.inode.size();
         // The new logical block id
-        let iblock = ((inode_size + BLOCK_SIZE as u64 - 1) / BLOCK_SIZE as u64) as u32;
+        let iblock = inode.inode.block_count() as LBlockId;
         // Check the extent tree to get the physical block id
-        let fblock = self.extent_get_pblock_create(inode, iblock, 1)?;
-        // Update inode block count
-        let block_count = inode.inode.block_count() + 1;
-        inode.inode.set_block_count(block_count);
-        self.write_inode_with_csum(inode);
-        
+        let fblock = self.extent_query_or_create(inode, iblock, 1)?;
+        // Update block count
+        inode.inode.set_block_count(inode.inode.block_count() + 1);
+        self.write_inode_without_csum(inode);
+
         Ok((iblock, fblock))
     }
 
@@ -121,11 +137,6 @@ impl Ext4 {
         let free_blocks = self.super_block.free_blocks_count() - 1;
         self.super_block.set_free_blocks_count(free_blocks);
         self.write_super_block();
-
-        // Update inode blocks (different block size!) count
-        let inode_blocks = inode.inode.block_count() + (BLOCK_SIZE / INODE_BLOCK_SIZE) as u64;
-        inode.inode.set_block_count(inode_blocks);
-        self.write_inode_with_csum(inode);
 
         // Update block group free blocks count
         let fb_cnt = bg.desc.get_free_blocks_count() - 1;
@@ -169,11 +180,6 @@ impl Ext4 {
         let free_blocks = self.super_block.free_blocks_count() + 1;
         self.super_block.set_free_blocks_count(free_blocks);
         self.write_super_block();
-
-        // Update inode blocks (different block size!) count
-        let inode_blocks = inode.inode.block_count() - (BLOCK_SIZE / INODE_BLOCK_SIZE) as u64;
-        inode.inode.set_block_count(inode_blocks);
-        self.write_inode_with_csum(inode);
 
         // Update block group free blocks count
         let fb_cnt = bg.desc.get_free_blocks_count() + 1;

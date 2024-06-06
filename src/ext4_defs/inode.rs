@@ -291,11 +291,7 @@ impl Inode {
     }
 
     pub fn block_count(&self) -> u64 {
-        let mut blocks = self.block_count as u64;
-        if self.osd2.l_blocks_hi != 0 {
-            blocks |= (self.osd2.l_blocks_hi as u64) << 32;
-        }
-        blocks
+        self.block_count as u64 | ((self.osd2.l_blocks_hi as u64) << 32)
     }
 
     pub fn set_block_count(&mut self, cnt: u64) {
@@ -330,14 +326,14 @@ impl Inode {
     /* Extent methods */
 
     /// Get the immutable extent root node
-    pub fn extent_node(&self) -> ExtentNode {
+    pub fn extent_root(&self) -> ExtentNode {
         ExtentNode::from_bytes(unsafe {
             core::slice::from_raw_parts(self.block.as_ptr() as *const u8, 60)
         })
     }
 
     /// Get the mutable extent root node
-    pub fn extent_node_mut(&mut self) -> ExtentNodeMut {
+    pub fn extent_root_mut(&mut self) -> ExtentNodeMut {
         ExtentNodeMut::from_bytes(unsafe {
             core::slice::from_raw_parts_mut(self.block.as_mut_ptr() as *mut u8, 60)
         })
@@ -348,7 +344,7 @@ impl Inode {
     /// node of the extent tree
     pub fn extent_init(&mut self) {
         self.set_flags(EXT4_INODE_FLAG_EXTENTS);
-        self.extent_node_mut().init(0, 0);
+        self.extent_root_mut().init(0, 0);
     }
 }
 

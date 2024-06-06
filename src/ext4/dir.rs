@@ -11,7 +11,7 @@ impl Ext4 {
         let mut iblock: LBlockId = 0;
         while iblock < total_blocks {
             // Get the fs block id
-            let fblock = self.extent_get_pblock(dir, iblock)?;
+            let fblock = self.extent_query(dir, iblock)?;
             // Load block from disk
             let block = self.read_block(fblock);
             // Find the entry in block
@@ -41,7 +41,7 @@ impl Ext4 {
         let mut iblock: LBlockId = 0;
         while iblock < total_blocks {
             // Get the parent physical block id
-            let fblock = self.extent_get_pblock(dir, iblock).unwrap();
+            let fblock = self.extent_query(dir, iblock).unwrap();
             // Load the parent block from disk
             let mut block = self.read_block(fblock);
             // Try inserting the entry to parent block
@@ -59,6 +59,8 @@ impl Ext4 {
         let mut new_block = self.read_block(fblock);
         // Write the entry to block
         self.insert_entry_to_new_block(&mut new_block, child, name);
+        // Update inode size
+        dir.inode.set_size(dir.inode.size() + BLOCK_SIZE as u64);
 
         Ok(())
     }
@@ -72,7 +74,7 @@ impl Ext4 {
         let mut iblock: LBlockId = 0;
         while iblock < total_blocks {
             // Get the parent physical block id
-            let fblock = self.extent_get_pblock(dir, iblock).unwrap();
+            let fblock = self.extent_query(dir, iblock).unwrap();
             // Load the block from disk
             let mut block = self.read_block(fblock);
             // Try removing the entry
@@ -96,7 +98,7 @@ impl Ext4 {
         let mut iblock: LBlockId = 0;
         while iblock < total_blocks {
             // Get the fs block id
-            let fblock = self.extent_get_pblock(dir, iblock).unwrap();
+            let fblock = self.extent_query(dir, iblock).unwrap();
             // Load block from disk
             let block = self.read_block(fblock);
             // Get all entries from block

@@ -24,11 +24,7 @@ impl ExtentSearchStep {
 
 impl Ext4 {
     /// Given a logic block id, find the corresponding fs block id.
-    pub(super) fn extent_get_pblock(
-        &self,
-        inode_ref: &InodeRef,
-        iblock: LBlockId,
-    ) -> Result<PBlockId> {
+    pub(super) fn extent_query(&self, inode_ref: &InodeRef, iblock: LBlockId) -> Result<PBlockId> {
         let path = self.find_extent(inode_ref, iblock);
         // Leaf is the last element of the path
         let leaf = path.last().unwrap();
@@ -42,21 +38,21 @@ impl Ext4 {
                 ExtentNode::from_bytes(&block_data.data)
             } else {
                 // Root node
-                inode_ref.inode.extent_node()
+                inode_ref.inode.extent_root()
             };
             let ex = ex_node.extent_at(index);
             Ok(ex.start_pblock() + (iblock - ex.start_lblock()) as PBlockId)
         } else {
             Err(format_error!(
                 ErrCode::ENOENT,
-                "extent_get_pblock: extent not found"
+                "extent_query: extent not found"
             ))
         }
     }
 
     /// Given a logic block id, find the corresponding fs block id.
     /// Create a new extent if not found.
-    pub(super) fn extent_get_pblock_create(
+    pub(super) fn extent_query_or_create(
         &mut self,
         inode_ref: &mut InodeRef,
         iblock: LBlockId,
@@ -72,7 +68,7 @@ impl Ext4 {
             ExtentNodeMut::from_bytes(&mut block_data.data)
         } else {
             // Root node
-            inode_ref.inode.extent_node_mut()
+            inode_ref.inode.extent_root_mut()
         };
         match leaf.index {
             Ok(index) => {
@@ -94,17 +90,22 @@ impl Ext4 {
         }
     }
 
-    /// Get all the physical blocks that the extent tree covers, including
-    /// the blocks allocated to save the extent tree itself.
-    pub(super) fn extent_get_all_pblocks(&self, inode_ref: &InodeRef) -> Result<Vec<PBlockId>> {
+    /// Get all data blocks recorded in the extent tree
+    pub(super) fn extent_all_data_blocks(&self, inode_ref: &InodeRef) -> Vec<PBlockId> {
         let mut pblocks = Vec::new();
-        let ex_node = inode_ref.inode.extent_node();
+        let ex_node = inode_ref.inode.extent_root();
         self.get_all_pblocks_recursive(&ex_node, &mut pblocks);
-        Ok(pblocks)
+        pblocks
     }
 
-    /// Get all the physical blocks that an extent node covers recursively,
-    /// including the blocks allocated to save the extent tree itself.
+    /// Get all physical blocks for saving the extent tree
+    pub(super) fn extent_all_tree_blocks(&self, inode_ref: &InodeRef) -> Vec<PBlockId> {
+        let mut pblocks = Vec::new();
+        let ex_node = inode_ref.inode.extent_root();
+        self.get_all_nodes_recursive(&ex_node, &mut pblocks);
+        pblocks
+    }
+
     fn get_all_pblocks_recursive(&self, ex_node: &ExtentNode, pblocks: &mut Vec<PBlockId>) {
         if ex_node.header().depth() == 0 {
             // Leaf
@@ -118,7 +119,6 @@ impl Ext4 {
             // Non-leaf
             for i in 0..ex_node.header().entries_count() as usize {
                 let ex_idx = ex_node.extent_index_at(i);
-                pblocks.push(ex_idx.leaf());
                 let child_block = self.read_block(ex_idx.leaf());
                 let child_node = ExtentNode::from_bytes(&child_block.data);
                 self.get_all_pblocks_recursive(&child_node, pblocks);
@@ -126,23 +126,34 @@ impl Ext4 {
         }
     }
 
+    fn get_all_nodes_recursive(&self, ex_node: &ExtentNode, pblocks: &mut Vec<PBlockId>) {
+        if ex_node.header().depth() != 0 {
+            // Non-leaf
+            for i in 0..ex_node.header().entries_count() as usize {
+                let ex_idx = ex_node.extent_index_at(i);
+                pblocks.push(ex_idx.leaf());
+                let child_block = self.read_block(ex_idx.leaf());
+                let child_node = ExtentNode::from_bytes(&child_block.data);
+                self.get_all_nodes_recursive(&child_node, pblocks);
+            }
+        }
+    }
+
     /// Find the given logic block id in the extent tree, return the search path
     fn find_extent(&self, inode_ref: &InodeRef, iblock: LBlockId) -> Vec<ExtentSearchStep> {
         let mut path: Vec<ExtentSearchStep> = Vec::new();
-        let mut ex_node = inode_ref.inode.extent_node();
+        let mut ex_node = inode_ref.inode.extent_root();
         let mut pblock = 0;
         let mut block_data: Block;
 
         // Go until leaf
         while ex_node.header().depth() > 0 {
-            let index = ex_node.search_extent_index(iblock);
-            if index.is_err() {
-                // TODO: no extent index
-                panic!("Unhandled error");
-            }
-            path.push(ExtentSearchStep::new(pblock, index));
+            let index = ex_node
+                .search_extent_index(iblock)
+                .expect("Must succeed");
+            path.push(ExtentSearchStep::new(pblock, Ok(index)));
             // Get the target extent index
-            let ex_idx = ex_node.extent_index_at(index.unwrap());
+            let ex_idx = ex_node.extent_index_at(index);
             // Load the next extent node
             let next = ex_idx.leaf();
             // Note: block data cannot be released until the next assigment
@@ -168,7 +179,7 @@ impl Ext4 {
         let leaf = path.last().unwrap();
         // 1. Check If leaf is root
         if leaf.pblock == 0 {
-            let mut leaf_node = inode_ref.inode.extent_node_mut();
+            let mut leaf_node = inode_ref.inode.extent_root_mut();
             // Insert the extent
             let res = leaf_node.insert_extent(new_ext, leaf.index.unwrap_err());
             self.write_inode_without_csum(inode_ref);
@@ -241,7 +252,7 @@ impl Ext4 {
         let parent_depth;
         if parent_pblock == 0 {
             // Parent is root
-            let mut parent_node = inode_ref.inode.extent_node_mut();
+            let mut parent_node = inode_ref.inode.extent_root_mut();
             parent_depth = parent_node.header().depth();
             res = parent_node.insert_extent_index(&extent_index, child_pos + 1);
             self.write_inode_without_csum(inode_ref);
@@ -275,7 +286,7 @@ impl Ext4 {
         let mut r_block = self.read_block(r_bid);
 
         // Load root, left, right nodes
-        let mut root = inode_ref.inode.extent_node_mut();
+        let mut root = inode_ref.inode.extent_root_mut();
         let mut left = ExtentNodeMut::from_bytes(&mut l_block.data);
         let mut right = ExtentNodeMut::from_bytes(&mut r_block.data);
 
