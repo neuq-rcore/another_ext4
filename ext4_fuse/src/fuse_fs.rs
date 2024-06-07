@@ -9,36 +9,76 @@
 //! Rust crate `fuser` doesn't have the detailed explantion of these interfaces.
 //! See `fuse_lowlevel_ops` in C FUSE library for details.
 //! https://libfuse.github.io/doxygen/structfuse__lowlevel__ops.html
+//!
+//! To support state checkpoint and restore, `Ext4FuseFs` uses a hash map
+//! to store checkpoint states. By using special `ioctl` commands, `Ext4FuseFs`
+//! can save and restore checkpoint states like `RefFS`, and thus support
+//! Metis model check.
 
 use super::common::{
     sys_time2second, time_or_now2second, translate_attr, translate_ftype, DirHandler, FileHandler,
 };
+use crate::block_dev::StateBlockDevice;
 use ext4_rs::{DirEntry, ErrCode, Ext4, Ext4Error, InodeMode, OpenFlags};
 use fuser::{
     FileAttr, FileType, Filesystem, ReplyAttr, ReplyCreate, ReplyData, ReplyEmpty, ReplyEntry,
     ReplyOpen, ReplyWrite, Request,
 };
-use std::ffi::OsStr;
+use std::collections::HashMap;
+use std::ffi::{c_int, OsStr};
+use std::sync::Arc;
 use std::time::Duration;
 
 type FId = u64;
+type StateKey = u64;
 
-pub struct Ext4FuseFs {
+pub struct StateExt4FuseFs<T> {
+    /// Block device
+    block_dev: Arc<dyn StateBlockDevice<T>>,
+    /// Ext4 filesystem
     fs: Ext4,
+    /// Checkpoint states
+    states: HashMap<StateKey, T>,
+    /// Opened files
     files: Vec<FileHandler>,
+    /// Next file handler id
     next_fid: FId,
+    /// Opened directories
     dirs: Vec<DirHandler>,
+    /// Next directory handler id
     next_did: FId,
 }
 
-impl Ext4FuseFs {
-    pub fn new(fs: Ext4) -> Self {
+impl<T: 'static> StateExt4FuseFs<T> {
+    const CHECKPOINT_IOC: u32 = 1;
+    const RESTORE_IOC: u32 = 2;
+
+    pub fn new(block_dev: Arc<dyn StateBlockDevice<T>>) -> Self {
         Self {
-            fs,
+            fs: Ext4::load(block_dev.clone()).unwrap(),
+            block_dev,
+            states: HashMap::new(),
             files: Vec::new(),
             next_fid: 0,
             dirs: Vec::new(),
             next_did: 0,
+        }
+    }
+
+    /// Save a state
+    fn checkpoint(&mut self, key: StateKey) -> bool {
+        self.states
+            .insert(key, self.block_dev.checkpoint())
+            .is_none()
+    }
+
+    /// Restore a state
+    fn restore(&mut self, key: StateKey) -> bool {
+        if let Some(state) = self.states.remove(&key) {
+            self.block_dev.restore(state);
+            true
+        } else {
+            false
         }
     }
 
@@ -73,7 +113,11 @@ impl Ext4FuseFs {
     }
 }
 
-impl Filesystem for Ext4FuseFs {
+impl<T: 'static> Filesystem for StateExt4FuseFs<T> {
+    fn init(&mut self, _req: &Request<'_>, _config: &mut fuser::KernelConfig) -> Result<(), c_int> {
+        self.fs.init().map_err(|e| e.code() as i32)
+    }
+
     fn lookup(&mut self, _req: &Request<'_>, parent: u64, name: &OsStr, reply: ReplyEntry) {
         match self.fs.lookup(parent as u32, name.to_str().unwrap()) {
             Ok(inode_id) => reply.entry(&get_ttl(), &self.get_attr(inode_id).unwrap(), 0),
@@ -358,6 +402,41 @@ impl Filesystem for Ext4FuseFs {
             }
         }
         reply.error(ErrCode::EACCES as i32);
+    }
+
+    fn ioctl(
+        &mut self,
+        _req: &Request<'_>,
+        _ino: u64,
+        _fh: u64,
+        _flags: u32,
+        cmd: u32,
+        in_data: &[u8],
+        _out_size: u32,
+        reply: fuser::ReplyIoctl,
+    ) {
+        match cmd {
+            Self::CHECKPOINT_IOC => {
+                let key = StateKey::from_ne_bytes(in_data[0..8].try_into().unwrap());
+                if self.checkpoint(key) {
+                    reply.ioctl(0, in_data);
+                } else {
+                    reply.error(-1);
+                }
+            }
+            Self::RESTORE_IOC => {
+                let key = StateKey::from_ne_bytes(in_data[0..8].try_into().unwrap());
+                if self.restore(key) {
+                    reply.ioctl(0, in_data);
+                } else {
+                    reply.error(-1);
+                }
+            }
+            _ => {
+                log::error!("Unknown ioctl command: {}", cmd);
+                reply.error(ErrCode::ENOTSUP as i32);
+            }
+        }
     }
 }
 
