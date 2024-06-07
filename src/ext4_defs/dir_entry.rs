@@ -170,7 +170,7 @@ impl DirEntry {
 
         let uuid = s.uuid();
 
-        let mut csum = ext4_crc32c(EXT4_CRC32_INIT, &uuid, uuid.len() as u32);
+        let mut csum = ext4_crc32c(CRC32_INIT, &uuid, uuid.len() as u32);
         csum = ext4_crc32c(csum, &ino_index.to_le_bytes(), 4);
         csum = ext4_crc32c(csum, &ino_gen.to_le_bytes(), 4);
         let mut data = [0u8; 0xff4];

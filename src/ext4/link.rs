@@ -5,7 +5,7 @@ use crate::prelude::*;
 impl Ext4 {
     /// Link a child inode to a parent directory.
     pub(super) fn link_inode(
-        &mut self,
+        &self,
         parent: &mut InodeRef,
         child: &mut InodeRef,
         name: &str,
@@ -28,7 +28,7 @@ impl Ext4 {
     /// Unlink a child inode from a parent directory.
     /// Free the inode if link count is 0.
     pub(super) fn unlink_inode(
-        &mut self,
+        &self,
         parent: &mut InodeRef,
         child: &mut InodeRef,
         name: &str,

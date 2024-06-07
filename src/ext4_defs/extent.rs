@@ -13,7 +13,6 @@
 //! inode.i_block, which allows for the first four extents to be recorded without
 //! the use of extra metadata blocks.
 
-use crate::constants::*;
 use crate::prelude::*;
 
 #[derive(Debug, Default, Clone, Copy)]
@@ -41,9 +40,11 @@ pub struct ExtentHeader {
 }
 
 impl ExtentHeader {
+    const EXTENT_MAGIC: u16 = 0xF30A;
+
     pub fn new(entries_count: u16, max_entries_count: u16, depth: u16, generation: u32) -> Self {
         Self {
-            magic: EXT4_EXTENT_MAGIC,
+            magic: Self::EXTENT_MAGIC,
             entries_count,
             max_entries_count,
             depth,
@@ -154,6 +155,9 @@ pub struct Extent {
 }
 
 impl Extent {
+    /// Extent with `block_count` greater than 32768 is considered unwritten.
+    const INIT_MAX_LEN: u16 = 32768;
+
     /// Create a new extent with start logic block number, start physical block number, and block count
     pub fn new(start_lblock: LBlockId, start_pblock: PBlockId, block_count: u16) -> Self {
         Self {
@@ -187,10 +191,10 @@ impl Extent {
 
     /// The actual number of blocks covered by this extent
     pub fn block_count(&self) -> LBlockId {
-        (if self.block_count <= EXT_INIT_MAX_LEN {
+        (if self.block_count <= Self::INIT_MAX_LEN {
             self.block_count
         } else {
-            self.block_count - EXT_INIT_MAX_LEN
+            self.block_count - Self::INIT_MAX_LEN
         }) as LBlockId
     }
 
@@ -201,12 +205,12 @@ impl Extent {
 
     /// Check if the extent is unwritten
     pub fn is_unwritten(&self) -> bool {
-        self.block_count > EXT_INIT_MAX_LEN
+        self.block_count > Self::INIT_MAX_LEN
     }
 
     /// Mark the extent as unwritten
     pub fn mark_unwritten(&mut self) {
-        (*self).block_count |= EXT_INIT_MAX_LEN;
+        (*self).block_count |= Self::INIT_MAX_LEN;
     }
 
     /// Check whether the `ex2` extent can be appended to the `ex1` extent
@@ -214,14 +218,11 @@ impl Extent {
         if ex1.start_pblock() + ex1.block_count() as u64 != ex2.start_pblock() {
             return false;
         }
-        if ex1.is_unwritten()
-            && ex1.block_count() + ex2.block_count() > EXT_UNWRITTEN_MAX_LEN as LBlockId
-        {
+        if ex1.is_unwritten() && ex1.block_count() + ex2.block_count() > 65535 as LBlockId {
             return false;
-        } else if ex1.block_count() + ex2.block_count() > EXT_INIT_MAX_LEN as LBlockId {
+        } else if ex1.block_count() + ex2.block_count() > Self::INIT_MAX_LEN as LBlockId {
             return false;
         }
-        // 检查逻辑块号是否连续
         if ex1.first_block + ex1.block_count() as u32 != ex2.first_block {
             return false;
         }

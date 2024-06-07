@@ -26,7 +26,7 @@ impl Ext4 {
 
     /// Add an entry to a directory
     pub(super) fn dir_add_entry(
-        &mut self,
+        &self,
         dir: &mut InodeRef,
         child: &InodeRef,
         name: &str,
@@ -36,7 +36,7 @@ impl Ext4 {
             dir.id, child.id, name
         );
         let total_blocks: u32 = dir.inode.block_count() as u32;
-        
+
         // Try finding a block with enough space
         let mut iblock: LBlockId = 0;
         while iblock < total_blocks {
@@ -66,7 +66,7 @@ impl Ext4 {
     }
 
     /// Remove a entry from a directory
-    pub(super) fn dir_remove_entry(&mut self, dir: &mut InodeRef, name: &str) -> Result<()> {
+    pub(super) fn dir_remove_entry(&self, dir: &mut InodeRef, name: &str) -> Result<()> {
         info!("Dir remove entry: dir {}, path {}", dir.id, name);
         let total_blocks: u32 = dir.inode.block_count() as u32;
 
@@ -166,7 +166,7 @@ impl Ext4 {
         let mut tail = DirEntryTail::default();
         tail.rec_len = size_of::<DirEntryTail>() as u16;
         tail.reserved_ft = 0xDE;
-        tail.set_csum(&self.super_block, &new_entry, &dst_blk.data[..]);
+        tail.set_csum(&self.read_super_block(), &new_entry, &dst_blk.data[..]);
         // Copy tail to block
         let tail_offset = BLOCK_SIZE - size_of::<DirEntryTail>();
         dst_blk.write_offset_as(tail_offset, &tail);
@@ -209,7 +209,7 @@ impl Ext4 {
             // Set tail csum
             let tail_offset = BLOCK_SIZE - size_of::<DirEntryTail>();
             let mut tail = dst_blk.read_offset_as::<DirEntryTail>(tail_offset);
-            tail.set_csum(&self.super_block, &de, &dst_blk.data[offset..]);
+            tail.set_csum(&self.read_super_block(), &de, &dst_blk.data[offset..]);
             // Write tail to blk_data
             dst_blk.write_offset_as(tail_offset, &tail);
 

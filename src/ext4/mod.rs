@@ -1,6 +1,7 @@
 use crate::constants::*;
 use crate::ext4_defs::*;
 use crate::prelude::*;
+use crate::return_error;
 
 mod alloc;
 mod dir;
@@ -14,7 +15,6 @@ mod rw;
 #[derive(Debug)]
 pub struct Ext4 {
     block_device: Arc<dyn BlockDevice>,
-    super_block: SuperBlock,
 }
 
 impl Ext4 {
@@ -23,12 +23,13 @@ impl Ext4 {
         // Load the superblock
         // TODO: if the main superblock is corrupted, should we load the backup?
         let block = block_device.read_block(0);
-        let super_block = block.read_offset_as::<SuperBlock>(BASE_OFFSET);
+        let sb = block.read_offset_as::<SuperBlock>(BASE_OFFSET);
+        // Check magic number
+        if !sb.check_magic() {
+            return_error!(ErrCode::EINVAL, "invalid magic number");
+        }
         // Create Ext4 instance
-        Ok(Self {
-            super_block,
-            block_device,
-        })
+        Ok(Self { block_device })
     }
     /// Initializes the root directory.
     pub fn init(&mut self) -> Result<()> {

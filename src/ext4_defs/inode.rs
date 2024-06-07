@@ -180,13 +180,17 @@ pub struct Inode {
 /// Because `[u8; 60]` cannot derive `Default`, we implement it manually.
 impl Default for Inode {
     fn default() -> Self {
-        unsafe { mem::zeroed() }
+        let mut inode: Self = unsafe { mem::zeroed() };
+        inode.extra_isize = (size_of::<Inode>() - 128) as u16;
+        inode
     }
 }
 
 unsafe impl AsBytes for Inode {}
 
 impl Inode {
+    const FLAG_EXTENTS: u32 = 0x00080000;
+
     pub fn mode(&self) -> InodeMode {
         InodeMode::from_bits_truncate(self.mode)
     }
@@ -303,10 +307,6 @@ impl Inode {
         self.generation = generation;
     }
 
-    pub fn set_extra_isize(&mut self, extra_isize: u16) {
-        self.extra_isize = extra_isize;
-    }
-
     pub fn flags(&self) -> u32 {
         self.flags
     }
@@ -343,7 +343,7 @@ impl Inode {
     /// inode to use extent for block mapping. Initialize the root
     /// node of the extent tree
     pub fn extent_init(&mut self) {
-        self.set_flags(EXT4_INODE_FLAG_EXTENTS);
+        self.set_flags(Self::FLAG_EXTENTS);
         self.extent_root_mut().init(0, 0);
     }
 }
@@ -433,7 +433,7 @@ impl InodeRef {
         self.inode.checksum_hi = 0;
 
         let mut checksum = ext4_crc32c(
-            EXT4_CRC32_INIT,
+            CRC32_INIT,
             &super_block.uuid(),
             super_block.uuid().len() as u32,
         );

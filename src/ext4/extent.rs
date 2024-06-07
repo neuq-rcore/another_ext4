@@ -53,7 +53,7 @@ impl Ext4 {
     /// Given a logic block id, find the corresponding fs block id.
     /// Create a new extent if not found.
     pub(super) fn extent_query_or_create(
-        &mut self,
+        &self,
         inode_ref: &mut InodeRef,
         iblock: LBlockId,
         block_count: u32,
@@ -78,7 +78,7 @@ impl Ext4 {
             }
             Err(_) => {
                 // Not found, create a new extent
-                let block_count = min(block_count, EXT_MAX_BLOCKS - iblock);
+                let block_count = min(block_count, MAX_BLOCKS - iblock);
                 // Allocate physical block
                 let fblock = self.alloc_block(inode_ref)?;
                 // Create a new extent
@@ -148,9 +148,7 @@ impl Ext4 {
 
         // Go until leaf
         while ex_node.header().depth() > 0 {
-            let index = ex_node
-                .search_extent_index(iblock)
-                .expect("Must succeed");
+            let index = ex_node.search_extent_index(iblock).expect("Must succeed");
             path.push(ExtentSearchStep::new(pblock, Ok(index)));
             // Get the target extent index
             let ex_idx = ex_node.extent_index_at(index);
@@ -171,7 +169,7 @@ impl Ext4 {
 
     /// Insert a new extent into the extent tree.
     fn insert_extent(
-        &mut self,
+        &self,
         inode_ref: &mut InodeRef,
         path: &Vec<ExtentSearchStep>,
         new_ext: &Extent,
@@ -226,7 +224,7 @@ impl Ext4 {
     /// `insert_extent_index`, and the split part is stored in `split`.
     /// This function will create a new leaf node to store the split part.
     fn split(
-        &mut self,
+        &self,
         inode_ref: &mut InodeRef,
         parent_pblock: PBlockId,
         child_pos: usize,
@@ -278,7 +276,7 @@ impl Ext4 {
     /// The root node has already been split by calling `insert_extent` or
     /// `insert_extent_index`, and the split part is stored in `split`.
     /// This function will create a new leaf node to store the split part.
-    fn split_root(&mut self, inode_ref: &mut InodeRef, split: &[FakeExtent]) -> Result<()> {
+    fn split_root(&self, inode_ref: &mut InodeRef, split: &[FakeExtent]) -> Result<()> {
         // Create left and right blocks
         let l_bid = self.alloc_block(inode_ref)?;
         let r_bid = self.alloc_block(inode_ref)?;

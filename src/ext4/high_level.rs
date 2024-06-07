@@ -24,7 +24,7 @@ impl Ext4 {
     /// ## Return
     ///
     /// `Ok(inode)` - Inode id of the object
-    pub fn generic_lookup(&mut self, root: InodeId, path: &str) -> Result<InodeId> {
+    pub fn generic_lookup(&self, root: InodeId, path: &str) -> Result<InodeId> {
         // Search from the given parent inode
         let mut cur = root;
         let search_path = Self::split_path(path);
@@ -47,12 +47,7 @@ impl Ext4 {
     /// ## Return
     ///
     /// `Ok(fh)` - File handler
-    pub fn generic_open(
-        &mut self,
-        root: InodeId,
-        path: &str,
-        flags: OpenFlags,
-    ) -> Result<FileHandler> {
+    pub fn generic_open(&self, root: InodeId, path: &str, flags: OpenFlags) -> Result<FileHandler> {
         let inode_id = self.generic_lookup(root, path)?;
         let inode = self.read_inode(inode_id);
         // Check file type
@@ -76,12 +71,7 @@ impl Ext4 {
     /// ## Return
     ///
     /// `Ok(inode)` - Inode id of the created object
-    pub fn generic_create(
-        &mut self,
-        root: InodeId,
-        path: &str,
-        mode: InodeMode,
-    ) -> Result<InodeId> {
+    pub fn generic_create(&self, root: InodeId, path: &str, mode: InodeMode) -> Result<InodeId> {
         // Search from the given parent inode
         let mut cur = self.read_inode(root);
         let search_path = Self::split_path(path);
@@ -124,7 +114,7 @@ impl Ext4 {
     ///
     /// * `root` - The inode id of the starting directory for search.
     /// * `path` - The path of the object to remove.
-    pub fn generic_remove(&mut self, root: InodeId, path: &str) -> Result<()> {
+    pub fn generic_remove(&self, root: InodeId, path: &str) -> Result<()> {
         // Get the parent directory path and the file name
         let mut search_path = Self::split_path(path);
         let file_name = &search_path.split_off(search_path.len() - 1)[0];

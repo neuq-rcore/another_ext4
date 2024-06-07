@@ -115,6 +115,12 @@ pub struct SuperBlock {
 unsafe impl AsBytes for SuperBlock {}
 
 impl SuperBlock {
+    const SB_MAGIC: u16 = 0xEF53;
+
+    pub fn check_magic(&self) -> bool {
+        self.magic == Self::SB_MAGIC
+    }
+
     pub fn load_from_disk(block_device: &dyn BlockDevice) -> Self {
         let block = block_device.read_block(0);
         block.read_offset_as(BASE_OFFSET)
@@ -179,12 +185,7 @@ impl SuperBlock {
     }
 
     pub fn desc_size(&self) -> u16 {
-        let size = self.desc_size;
-        if size < EXT4_MIN_BLOCK_GROUP_DESCRIPTOR_SIZE {
-            return EXT4_MIN_BLOCK_GROUP_DESCRIPTOR_SIZE as u16;
-        } else {
-            size
-        }
+        self.desc_size
     }
 
     pub fn extra_size(&self) -> u16 {

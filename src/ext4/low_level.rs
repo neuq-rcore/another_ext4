@@ -63,7 +63,7 @@ impl Ext4 {
     ///
     /// `EINVAL` if the inode is invalid (mode == 0).
     pub fn setattr(
-        &mut self,
+        &self,
         id: InodeId,
         mode: Option<InodeMode>,
         uid: Option<u32>,
@@ -124,7 +124,7 @@ impl Ext4 {
     ///
     /// * `ENOTDIR` - `parent` is not a directory
     /// * `ENOSPC` - No space left on device
-    pub fn create(&mut self, parent: InodeId, name: &str, mode: InodeMode) -> Result<InodeId> {
+    pub fn create(&self, parent: InodeId, name: &str, mode: InodeMode) -> Result<InodeId> {
         let mut parent = self.read_inode(parent);
         // Can only create a file in a directory
         if !parent.inode.is_dir() {
@@ -153,7 +153,7 @@ impl Ext4 {
     /// # Error
     ///
     /// * `EISDIR` - `file` is not a regular file
-    pub fn read(&mut self, file: InodeId, offset: usize, buf: &mut [u8]) -> Result<usize> {
+    pub fn read(&self, file: InodeId, offset: usize, buf: &mut [u8]) -> Result<usize> {
         // Get the inode of the file
         let mut file = self.read_inode(file);
         if !file.inode.is_file() {
@@ -213,7 +213,7 @@ impl Ext4 {
     ///
     /// * `EISDIR` - `file` is not a regular file
     /// * `ENOSPC` - no space left on device
-    pub fn write(&mut self, file: InodeId, offset: usize, data: &[u8]) -> Result<usize> {
+    pub fn write(&self, file: InodeId, offset: usize, data: &[u8]) -> Result<usize> {
         // Get the inode of the file
         let mut file = self.read_inode(file);
         if !file.inode.is_file() {
@@ -265,7 +265,7 @@ impl Ext4 {
     ///
     /// * `ENOTDIR` - `parent` is not a directory
     /// * `ENOSPC` - no space left on device
-    pub fn link(&mut self, child: InodeId, parent: InodeId, name: &str) -> Result<()> {
+    pub fn link(&self, child: InodeId, parent: InodeId, name: &str) -> Result<()> {
         let mut parent = self.read_inode(parent);
         // Can only link to a directory
         if !parent.inode.is_dir() {
@@ -287,7 +287,7 @@ impl Ext4 {
     ///
     /// * `ENOTDIR` - `parent` is not a directory
     /// * `ENOENT` - `name` does not exist in `parent`
-    pub fn unlink(&mut self, parent: InodeId, name: &str) -> Result<()> {
+    pub fn unlink(&self, parent: InodeId, name: &str) -> Result<()> {
         let mut parent = self.read_inode(parent);
         // Can only unlink from a directory
         if !parent.inode.is_dir() {
@@ -314,7 +314,7 @@ impl Ext4 {
     /// * `ENOENT` - `name` does not exist in `parent`
     /// * `ENOSPC` - no space left on device
     pub fn rename(
-        &mut self,
+        &self,
         parent: InodeId,
         name: &str,
         new_parent: InodeId,
@@ -357,7 +357,7 @@ impl Ext4 {
     ///
     /// * `ENOTDIR` - `parent` is not a directory
     /// * `ENOSPC` - no space left on device
-    pub fn mkdir(&mut self, parent: InodeId, name: &str, mode: InodeMode) -> Result<InodeId> {
+    pub fn mkdir(&self, parent: InodeId, name: &str, mode: InodeMode) -> Result<InodeId> {
         let mut parent = self.read_inode(parent);
         // Can only create a directory in a directory
         if !parent.inode.is_dir() {
@@ -386,7 +386,7 @@ impl Ext4 {
     ///
     /// * `ENOTDIR` - `parent` is not a directory
     /// * `ENOENT` - `name` does not exist in `parent`
-    pub fn lookup(&mut self, parent: InodeId, name: &str) -> Result<InodeId> {
+    pub fn lookup(&self, parent: InodeId, name: &str) -> Result<InodeId> {
         let parent = self.read_inode(parent);
         // Can only lookup in a directory
         if !parent.inode.is_dir() {
@@ -430,7 +430,7 @@ impl Ext4 {
     /// * `ENOTDIR` - `parent` or `child` is not a directory
     /// * `ENOENT` - `name` does not exist in `parent`
     /// * `ENOTEMPTY` - `child` is not empty
-    pub fn rmdir(&mut self, parent: InodeId, name: &str) -> Result<()> {
+    pub fn rmdir(&self, parent: InodeId, name: &str) -> Result<()> {
         let mut parent = self.read_inode(parent);
         // Can only remove a directory in a directory
         if !parent.inode.is_dir() {

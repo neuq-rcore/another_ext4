@@ -4,9 +4,9 @@ use core::any::Any;
 use core::fmt::Debug;
 
 /// Interface for serializing and deserializing objects to and from bytes.
-/// 
+///
 /// # Unsafe
-/// 
+///
 /// This trait is unsafe because it allows arbitrary memory interpretation.
 /// Implementor should guarantee the object is saved in the way defined by
 /// functions `from_bytes` and `to_bytes`.
