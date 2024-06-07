@@ -1,7 +1,7 @@
+use block_file::BlockFile;
 use ext4_rs::{Ext4, InodeMode, OpenFlags, EXT4_ROOT_INO};
 use simple_logger::SimpleLogger;
 use std::sync::Arc;
-use block_file::BlockFile;
 
 mod block_file;
 
@@ -22,7 +22,9 @@ fn make_ext4() {
 fn open_ext4() -> Ext4 {
     let file = BlockFile::new("ext4.img");
     println!("creating ext4");
-    Ext4::load(Arc::new(file)).expect("open ext4 failed")
+    let mut ext4 = Ext4::load(Arc::new(file)).expect("open ext4 failed");
+    ext4.init().expect("init ext4 failed");
+    ext4
 }
 
 fn mkdir_test(ext4: &mut Ext4) {
@@ -68,7 +70,9 @@ fn read_write_test(ext4: &mut Ext4) {
     let rfile = ext4
         .generic_open(ROOT_INO, "d3/f0", OpenFlags::O_RDONLY)
         .expect("open failed");
-    let rcount = ext4.read(rfile.inode, 0, &mut rbuffer).expect("read failed");
+    let rcount = ext4
+        .read(rfile.inode, 0, &mut rbuffer)
+        .expect("read failed");
 
     assert_eq!(wbuffer, &rbuffer[..rcount]);
 }
@@ -84,7 +88,9 @@ fn large_read_write_test(ext4: &mut Ext4) {
         .generic_open(ROOT_INO, "d3/f1", OpenFlags::O_RDONLY)
         .expect("open failed");
     let mut rbuffer = vec![0u8; wbuffer.len()];
-    let rcount = ext4.read(rfile.inode, 0,&mut rbuffer).expect("read failed");
+    let rcount = ext4
+        .read(rfile.inode, 0, &mut rbuffer)
+        .expect("read failed");
 
     assert_eq!(wbuffer, &rbuffer[..rcount]);
 }

@@ -19,21 +19,20 @@ pub struct Ext4 {
 
 impl Ext4 {
     /// Opens and loads an Ext4 from the `block_device`.
-    ///
-    /// | Super Block | Group Descriptor | Reserved GDT Blocks |
-    /// | Block Bitmap | Inode Bitmap | Inode Table | Data Blocks |
     pub fn load(block_device: Arc<dyn BlockDevice>) -> Result<Self> {
         // Load the superblock
         // TODO: if the main superblock is corrupted, should we load the backup?
         let block = block_device.read_block(0);
         let super_block = block.read_offset_as::<SuperBlock>(BASE_OFFSET);
         // Create Ext4 instance
-        let mut ext4 = Self {
+        Ok(Self {
             super_block,
             block_device,
-        };
+        })
+    }
+    /// Initializes the root directory.
+    pub fn init(&mut self) -> Result<()> {
         // Create root directory
-        ext4.create_root_inode()?;
-        Ok(ext4)
+        self.create_root_inode().map(|_| ())
     }
 }
