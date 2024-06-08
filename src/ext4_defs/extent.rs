@@ -290,14 +290,14 @@ impl<'a> ExtentNode<'a> {
     /// the given logical block number. Return `Err(index)` if not found, and `index` is the
     /// position where the new extent should be inserted.
     pub fn search_extent(&self, lblock: LBlockId) -> core::result::Result<usize, usize> {
-        debug!("Search extent: {}", lblock);
+        // debug!("Search extent: {}", lblock);
         let mut i = 0;
         while i < self.header().entries_count as usize {
             let extent = self.extent_at(i);
             if extent.start_lblock() <= lblock {
                 if extent.start_lblock() + (extent.block_count() as LBlockId) > lblock {
                     let res = if extent.is_unwritten() { Err(i) } else { Ok(i) };
-                    debug!("Search res: {:?}", res);
+                    // debug!("Search res: {:?}", res);
                     return res;
                 }
                 i += 1;
@@ -306,7 +306,7 @@ impl<'a> ExtentNode<'a> {
             }
         }
         let res = Err(i);
-        debug!("Search res: {:?}", res);
+        // debug!("Search res: {:?}", res);
         return res;
     }
 
@@ -317,7 +317,7 @@ impl<'a> ExtentNode<'a> {
     /// Return `Err(index)` if not found, and `index` is the position where the new extent index
     /// should be inserted.
     pub fn search_extent_index(&self, lblock: LBlockId) -> core::result::Result<usize, usize> {
-        debug!("Search extent index: {}", lblock);
+        // debug!("Search extent index: {}", lblock);
         let mut i = 0;
         while i < self.header().entries_count as usize {
             let extent_index = self.extent_index_at(i);
@@ -327,7 +327,7 @@ impl<'a> ExtentNode<'a> {
             i += 1;
         }
         let res = Ok(i - 1);
-        debug!("Search res: {:?}", res);
+        // debug!("Search res: {:?}", res);
         return res;
     }
 
