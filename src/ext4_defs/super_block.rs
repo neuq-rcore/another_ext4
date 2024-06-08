@@ -13,31 +13,31 @@ use crate::prelude::*;
 #[repr(C)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SuperBlock {
-    inodes_count: u32,             // 节点数
-    blocks_count_lo: u32,          // 块数
-    reserved_blocks_count_lo: u32, // 保留块数
-    free_blocks_count_lo: u32,     // 空闲块数
-    free_inodes_count: u32,        // 空闲节点数
-    first_data_block: u32,         // 第一个数据块
-    log_block_size: u32,           // 块大小
-    log_cluster_size: u32,         // 废弃的片段大小
-    blocks_per_group: u32,         // 每组块数
-    frags_per_group: u32,          // 废弃的每组片段数
-    inodes_per_group: u32,         // 每组节点数
-    mount_time: u32,               // 挂载时间
-    write_time: u32,               // 写入时间
-    mount_count: u16,              // 挂载次数
-    max_mount_count: u16,          // 最大挂载次数
-    magic: u16,                    // 魔数，0xEF53
-    state: u16,                    // 文件系统状态
-    errors: u16,                   // 检测到错误时的行为
-    minor_rev_level: u16,          // 次版本号
-    last_check_time: u32,          // 最后检查时间
-    check_interval: u32,           // 检查间隔
-    creator_os: u32,               // 创建者操作系统
-    rev_level: u32,                // 版本号
-    def_resuid: u16,               // 保留块的默认uid
-    def_resgid: u16,               // 保留块的默认gid
+    inode_count: u32,             // 节点数
+    block_count_lo: u32,          // 块数
+    reserved_block_count_lo: u32, // 保留块数
+    free_block_count_lo: u32,     // 空闲块数
+    free_inode_count: u32,        // 空闲节点数
+    first_data_block: u32,        // 第一个数据块
+    log_block_size: u32,          // Block size is 2 ^ (10 + s_log_block_size).
+    log_cluster_size: u32,        // 废弃的片段大小
+    blocks_per_group: u32,        // 每组块数
+    frags_per_group: u32,         // 废弃的每组片段数
+    inodes_per_group: u32,        // 每组节点数
+    mount_time: u32,              // 挂载时间
+    write_time: u32,              // 写入时间
+    mount_count: u16,             // 挂载次数
+    max_mount_count: u16,         // 最大挂载次数
+    magic: u16,                   // 魔数，0xEF53
+    state: u16,                   // 文件系统状态
+    errors: u16,                  // 检测到错误时的行为
+    minor_rev_level: u16,         // 次版本号
+    last_check_time: u32,         // 最后检查时间
+    check_interval: u32,          // 检查间隔
+    creator_os: u32,              // 创建者操作系统
+    rev_level: u32,               // 版本号
+    def_resuid: u16,              // 保留块的默认uid
+    def_resgid: u16,              // 保留块的默认gid
 
     // 仅适用于EXT4_DYNAMIC_REV超级块的字段
     first_inode: u32,            // 第一个非保留节点
@@ -71,7 +71,7 @@ pub struct SuperBlock {
     journal_blocks: [u32; 17], // 日志节点的备份
 
     // 如果EXT4_FEATURE_COMPAT_64BIT设置，表示支持64位
-    blocks_count_hi: u32,          // 块数
+    block_count_hi: u32,           // 块数
     reserved_blocks_count_hi: u32, // 保留块数
     free_blocks_count_hi: u32,     // 空闲块数
     min_extra_isize: u16,          // 所有节点至少有#字节
@@ -137,7 +137,7 @@ impl SuperBlock {
     }
 
     pub fn free_inodes_count(&self) -> u32 {
-        self.free_inodes_count
+        self.free_inode_count
     }
 
     pub fn features_read_only(&self) -> u32 {
@@ -149,8 +149,13 @@ impl SuperBlock {
     }
 
     /// Returns total number of inodes.
-    pub fn total_inodes(&self) -> u32 {
-        self.inodes_count
+    pub fn inode_count(&self) -> u32 {
+        self.inode_count
+    }
+
+    /// Returns total number of blocks.
+    pub fn block_count(&self) -> u64 {
+        self.block_count_lo as u64 | ((self.block_count_hi as u64) << 32)
     }
 
     /// Returns the number of blocks in each block group.
@@ -169,10 +174,9 @@ impl SuperBlock {
     }
 
     /// Returns the number of block groups.
-    /// FIXME: This function is not correct.
-    pub fn block_groups_count(&self) -> u32 {
-        (((self.blocks_count_hi.to_le() as u64) << 32) as u32 | self.blocks_count_lo)
-            / self.blocks_per_group
+    pub fn block_group_count(&self) -> u32 {
+        ((self.block_count() + self.blocks_per_group as u64 - 1) / self.blocks_per_group as u64)
+            as u32
     }
 
     /// Returns the size of inode structure.
@@ -193,27 +197,25 @@ impl SuperBlock {
     }
 
     pub fn inode_count_in_group(&self, bgid: u32) -> u32 {
-        let block_group_count = self.block_groups_count();
-        let inodes_per_group = self.inodes_per_group;
-
-        let total_inodes = ((self.inodes_count as u64) << 32) as u32;
-        if bgid < block_group_count - 1 {
-            inodes_per_group
+        let bg_count = self.block_group_count();
+        if bgid < bg_count {
+            self.inodes_per_group
         } else {
-            total_inodes - ((block_group_count - 1) * inodes_per_group)
+            // Last group
+            self.inode_count - (bg_count - 1) * self.inodes_per_group
         }
     }
 
     pub fn decrease_free_inodes_count(&mut self) {
-        self.free_inodes_count -= 1;
+        self.free_inode_count -= 1;
     }
 
     pub fn free_blocks_count(&self) -> u64 {
-        self.free_blocks_count_lo as u64 | ((self.free_blocks_count_hi as u64) << 32).to_le()
+        self.free_block_count_lo as u64 | ((self.free_blocks_count_hi as u64) << 32).to_le()
     }
 
     pub fn set_free_blocks_count(&mut self, free_blocks: u64) {
-        self.free_blocks_count_lo = ((free_blocks << 32) >> 32).to_le() as u32;
+        self.free_block_count_lo = ((free_blocks << 32) >> 32).to_le() as u32;
         self.free_blocks_count_hi = (free_blocks >> 32) as u32;
     }
 }

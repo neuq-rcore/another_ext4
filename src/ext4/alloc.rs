@@ -186,7 +186,7 @@ impl Ext4 {
     /// Allocate a new inode, returning the inode number.
     fn alloc_inode(&self, is_dir: bool) -> Result<InodeId> {
         let mut sb = self.read_super_block();
-        let bg_count = sb.block_groups_count();
+        let bg_count = sb.block_group_count();
 
         let mut bgid = 0;
         while bgid <= bg_count {
