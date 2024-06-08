@@ -12,14 +12,21 @@ impl Ext4 {
     ) -> Result<()> {
         // Add entry to parent directory
         self.dir_add_entry(parent, child, name)?;
-        // Update link count of child
-        let link_cnt = child.inode.link_count() + 1;
-        child.inode.set_link_count(link_cnt);
-        // Add '.' and '..' entries if child is a newly created directory
-        if link_cnt == 1 && child.inode.is_dir() {
+
+        let child_link_count = child.inode.link_count();
+        if child.inode.is_dir() && child_link_count == 0 {
+            // Add '.' and '..' entries if child is a newly created directory
             let child_self = child.clone();
             self.dir_add_entry(child, &child_self, ".")?;
             self.dir_add_entry(child, parent, "..")?;
+            // Link child/".."
+            parent.inode.set_link_count(parent.inode.link_count() + 1);
+            self.write_inode_with_csum(parent);
+            // Link parent/child + child/"."
+            child.inode.set_link_count(child_link_count + 2);
+        } else {
+            // Link parent/child
+            child.inode.set_link_count(child_link_count + 1);
         }
         self.write_inode_with_csum(child);
         Ok(())
@@ -35,13 +42,21 @@ impl Ext4 {
     ) -> Result<()> {
         // Remove entry from parent directory
         self.dir_remove_entry(parent, name)?;
-        // Update link count of child
-        let link_cnt = child.inode.link_count() - 1;
-        if link_cnt == 0 {
-            // Free the inode if link count is 0
+
+        let child_link_cnt = child.inode.link_count();
+        if child.inode.is_dir() && child_link_cnt == 2 {
+            // If child is an empty directory
+            // Unlink "child/.."
+            parent.inode.set_link_count(parent.inode.link_count() - 1);
+            self.write_inode_with_csum(parent);
+            // Remove directory
+            return self.free_inode(child);
+        } else if child_link_cnt == 1 {
+            // Remove file
             return self.free_inode(child);
         }
-        child.inode.set_link_count(link_cnt);
+        // Not remove
+        child.inode.set_link_count(child_link_cnt - 1);
         self.write_inode_with_csum(child);
         Ok(())
     }

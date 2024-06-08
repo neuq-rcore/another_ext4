@@ -30,7 +30,7 @@ impl Ext4 {
         let mut inode = Inode::default();
         inode.set_mode(InodeMode::from_type_and_perm(
             FileType::Directory,
-            InodeMode::ALL_RWX,
+            InodeMode::from_bits_retain(0o755),
         ));
         inode.extent_init();
 
@@ -40,6 +40,7 @@ impl Ext4 {
         // Add `.` and `..` entries
         self.dir_add_entry(&mut root, &root_self, ".")?;
         self.dir_add_entry(&mut root, &root_self, "..")?;
+        root.inode.set_link_count(2);
 
         self.write_inode_with_csum(&mut root);
         Ok(root)

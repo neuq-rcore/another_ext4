@@ -24,7 +24,7 @@ impl Ext4 {
         Err(Ext4Error::new(ErrCode::ENOENT))
     }
 
-    /// Add an entry to a directory
+    /// Add an entry to a directory, memory consistency guaranteed
     pub(super) fn dir_add_entry(
         &self,
         dir: &mut InodeRef,
@@ -66,7 +66,7 @@ impl Ext4 {
     }
 
     /// Remove a entry from a directory
-    pub(super) fn dir_remove_entry(&self, dir: &mut InodeRef, name: &str) -> Result<()> {
+    pub(super) fn dir_remove_entry(&self, dir: &InodeRef, name: &str) -> Result<()> {
         info!("Dir remove entry: dir {}, path {}", dir.id, name);
         let total_blocks: u32 = dir.inode.block_count() as u32;
 
