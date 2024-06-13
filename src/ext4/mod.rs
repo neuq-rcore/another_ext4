@@ -26,8 +26,17 @@ impl Ext4 {
         let sb = block.read_offset_as::<SuperBlock>(BASE_OFFSET);
         // Check magic number
         if !sb.check_magic() {
-            return_error!(ErrCode::EINVAL, "invalid magic number");
+            return_error!(ErrCode::EINVAL, "Invalid magic number");
         }
+        // Check inode size
+        if !sb.inode_size() == SB_GOOD_INODE_SIZE {
+            return_error!(ErrCode::EINVAL, "Invalid inode size");
+        }
+        // Check block group desc size
+        if !sb.desc_size() as usize != SB_GOOD_DESC_SIZE {
+            return_error!(ErrCode::EINVAL, "Invalid block group desc size");
+        }
+        log::debug!("Ext4 loaded: {:?}", sb);
         // Create Ext4 instance
         Ok(Self { block_device })
     }

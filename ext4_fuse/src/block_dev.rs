@@ -41,7 +41,8 @@ impl BlockMem {
             .expect("Failed to create temp file");
         // Make ext4 fs
         std::process::Command::new("mkfs.ext4")
-            .args([path, &format!("-b {}", BLOCK_SIZE)])
+            // Enable 64-bit feature and use 256-bit inode size
+            .args([path, &format!("-b {}", BLOCK_SIZE), "-O 64bit", "-I 256"])
             .status()
             .expect("Failed to make ext4 fs");
         // Open the temp file and copy data to memory

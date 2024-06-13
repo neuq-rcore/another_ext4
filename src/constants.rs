@@ -28,3 +28,11 @@ pub const INODE_BLOCK_SIZE: usize = 4096;
 
 /// CRC32 initial value
 pub const CRC32_INIT: u32 = 0xFFFFFFFF;
+
+/// The value of super block `inode_size` field.
+/// We implement the larger version of inode size for simplicity.
+pub const SB_GOOD_INODE_SIZE: usize = 256;
+
+/// The value of super block `desc_size` field.
+/// We implement the 64-bit block group descriptor for simplicity.
+pub const SB_GOOD_DESC_SIZE: usize = 64;

@@ -106,9 +106,9 @@ impl Ext4 {
         let mut bg = self.read_block_group(bgid);
 
         // Load block bitmap
-        let bitmap_block_id = bg.desc.block_bitmap_block(&sb);
+        let bitmap_block_id = bg.desc.block_bitmap_block();
         let mut bitmap_block = self.read_block(bitmap_block_id);
-        let mut bitmap = Bitmap::new(&mut bitmap_block.data);
+        let mut bitmap = Bitmap::new(&mut bitmap_block.data, 8 * BLOCK_SIZE);
 
         // Find the first free block
         let fblock = bitmap
@@ -118,21 +118,18 @@ impl Ext4 {
                 "No free blocks in block group {}",
                 bgid
             ))? as PBlockId;
-
         // Set block group checksum
-        bg.desc.set_block_bitmap_csum(&sb, &bitmap);
+        bg.desc.set_block_bitmap_csum(&sb.uuid(), &bitmap);
         self.write_block(&bitmap_block);
 
-        // Update superblock free blocks count
-        let free_blocks = sb.free_blocks_count() - 1;
-        sb.set_free_blocks_count(free_blocks);
-        self.write_super_block(&sb);
-
-        // Update block group free blocks count
-        let fb_cnt = bg.desc.get_free_blocks_count() - 1;
-        bg.desc.set_free_blocks_count(fb_cnt);
-
+        // Update block group counters
+        bg.desc
+            .set_free_blocks_count(bg.desc.get_free_blocks_count() - 1);
         self.write_block_group_with_csum(&mut bg);
+
+        // Update superblock counters
+        sb.set_free_blocks_count(sb.free_blocks_count() - 1);
+        self.write_super_block(&sb);
 
         trace!("Alloc block {} ok", fblock);
         Ok(fblock)
@@ -150,30 +147,27 @@ impl Ext4 {
         let mut bg = self.read_block_group(bgid);
 
         // Load block bitmap
-        let bitmap_block_id = bg.desc.block_bitmap_block(&sb);
+        let bitmap_block_id = bg.desc.block_bitmap_block();
         let mut bitmap_block = self.read_block(bitmap_block_id);
-        let mut bitmap = Bitmap::new(&mut bitmap_block.data);
+        let mut bitmap = Bitmap::new(&mut bitmap_block.data, 8 * BLOCK_SIZE);
 
         // Free the block
         if bitmap.is_bit_clear(pblock as usize) {
             return_error!(ErrCode::EINVAL, "Block {} is already free", pblock);
         }
         bitmap.clear_bit(pblock as usize);
-
         // Set block group checksum
-        bg.desc.set_block_bitmap_csum(&sb, &bitmap);
+        bg.desc.set_block_bitmap_csum(&sb.uuid(), &bitmap);
         self.write_block(&bitmap_block);
 
-        // Update superblock free blocks count
-        let free_blocks = sb.free_blocks_count() + 1;
-        sb.set_free_blocks_count(free_blocks);
-        self.write_super_block(&sb);
-
-        // Update block group free blocks count
-        let fb_cnt = bg.desc.get_free_blocks_count() + 1;
-        bg.desc.set_free_blocks_count(fb_cnt);
-
+        // Update block group counters
+        bg.desc
+            .set_free_blocks_count(bg.desc.get_free_blocks_count() + 1);
         self.write_block_group_with_csum(&mut bg);
+
+        // Update superblock counters
+        sb.set_free_blocks_count(sb.free_blocks_count() + 1);
+        self.write_super_block(&sb);
 
         trace!("Free block {} ok", pblock);
         Ok(())
@@ -193,12 +187,11 @@ impl Ext4 {
                 bgid += 1;
                 continue;
             }
-
             // Load inode bitmap
-            let bitmap_block_id = bg.desc.inode_bitmap_block(&sb);
+            let bitmap_block_id = bg.desc.inode_bitmap_block();
             let mut bitmap_block = self.read_block(bitmap_block_id);
             let inode_count = sb.inode_count_in_group(bgid) as usize;
-            let mut bitmap = Bitmap::new(&mut bitmap_block.data[..inode_count / 8]);
+            let mut bitmap = Bitmap::new(&mut bitmap_block.data, inode_count);
 
             // Find a free inode
             let idx_in_bg =
@@ -209,42 +202,33 @@ impl Ext4 {
                         "No free inodes in block group {}",
                         bgid
                     ))? as u32;
-
             // Update bitmap in disk
-            bg.desc.set_inode_bitmap_csum(&sb, &bitmap);
+            bg.desc.set_inode_bitmap_csum(&sb.uuid(), &bitmap);
             self.write_block(&bitmap_block);
 
-            // Modify filesystem counters
-            let free_inodes = bg.desc.free_inodes_count() - 1;
-            bg.desc.set_free_inodes_count(&sb, free_inodes);
-
-            // Increase used directories counter
+            // Modify block group counters
+            bg.desc
+                .set_free_inodes_count(bg.desc.free_inodes_count() - 1);
             if is_dir {
-                let used_dirs = bg.desc.used_dirs_count(&sb) + 1;
-                bg.desc.set_used_dirs_count(&sb, used_dirs);
+                bg.desc.set_used_dirs_count(bg.desc.used_dirs_count() + 1);
             }
-
-            // Decrease unused inodes count
-            let mut unused = bg.desc.itable_unused(&sb);
+            let mut unused = bg.desc.itable_unused();
             let free = inode_count as u32 - unused;
             if idx_in_bg >= free {
                 unused = inode_count as u32 - (idx_in_bg + 1);
-                bg.desc.set_itable_unused(&sb, unused);
+                bg.desc.set_itable_unused(unused);
             }
-
             self.write_block_group_with_csum(&mut bg);
 
-            // Update superblock
-            sb.decrease_free_inodes_count();
+            // Update superblock counters
+            sb.set_free_inodes_count(sb.free_inodes_count() - 1);
             self.write_super_block(&sb);
 
             // Compute the absolute i-node number
             let inodes_per_group = sb.inodes_per_group();
             let inode_id = bgid * inodes_per_group + (idx_in_bg + 1);
-
             return Ok(inode_id);
         }
-
         trace!("no free inode");
         return_error!(ErrCode::ENOSPC, "No free inodes in block group {}", bgid);
     }
@@ -257,15 +241,13 @@ impl Ext4 {
         let inodes_per_group = sb.inodes_per_group();
         let bgid = ((inode_ref.id - 1) / inodes_per_group) as BlockGroupId;
         let idx_in_bg = (inode_ref.id - 1) % inodes_per_group;
-
         // Load block group descriptor
         let mut bg = self.read_block_group(bgid);
-
         // Load inode bitmap
-        let bitmap_block_id = bg.desc.inode_bitmap_block(&sb);
+        let bitmap_block_id = bg.desc.inode_bitmap_block();
         let mut bitmap_block = self.read_block(bitmap_block_id);
         let inode_count = sb.inode_count_in_group(bgid) as usize;
-        let mut bitmap = Bitmap::new(&mut bitmap_block.data[..inode_count / 8]);
+        let mut bitmap = Bitmap::new(&mut bitmap_block.data, inode_count);
 
         // Free the inode
         if bitmap.is_bit_clear(idx_in_bg as usize) {
@@ -277,29 +259,21 @@ impl Ext4 {
             );
         }
         bitmap.clear_bit(idx_in_bg as usize);
-
         // Update bitmap in disk
-        bg.desc.set_inode_bitmap_csum(&sb, &bitmap);
+        bg.desc.set_inode_bitmap_csum(&sb.uuid(), &bitmap);
         self.write_block(&bitmap_block);
 
-        // Modify filesystem counters
-        let free_inodes = bg.desc.free_inodes_count() + 1;
-        bg.desc.set_free_inodes_count(&sb, free_inodes);
-
-        // Increase used directories counter
+        // Update block group counters
+        bg.desc
+            .set_free_inodes_count(bg.desc.free_inodes_count() + 1);
         if inode_ref.inode.is_dir() {
-            let used_dirs = bg.desc.used_dirs_count(&sb) - 1;
-            bg.desc.set_used_dirs_count(&sb, used_dirs);
+            bg.desc.set_used_dirs_count(bg.desc.used_dirs_count() - 1);
         }
-
-        // Decrease unused inodes count
-        let unused = bg.desc.itable_unused(&sb) + 1;
-        bg.desc.set_itable_unused(&sb, unused);
-
+        bg.desc.set_itable_unused(bg.desc.itable_unused() + 1);
         self.write_block_group_with_csum(&mut bg);
 
-        // Update superblock
-        sb.decrease_free_inodes_count();
+        // Update superblock counters
+        sb.set_free_inodes_count(sb.free_inodes_count() - 1);
         self.write_super_block(&sb);
 
         Ok(())
