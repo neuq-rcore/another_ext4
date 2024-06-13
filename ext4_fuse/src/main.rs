@@ -27,7 +27,7 @@ fn main() {
     let args = Args::parse();
 
     SimpleLogger::new().init().unwrap();
-    log::set_max_level(log::LevelFilter::Debug);
+    log::set_max_level(log::LevelFilter::Trace);
     info!("Use mountpoint \"{}\"", args.mountpoint);
 
     // Initialize block device and filesystem

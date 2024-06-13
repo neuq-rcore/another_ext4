@@ -1,54 +1,6 @@
-use ext4_rs::{
-    DirEntry, FileAttr as Ext4FileAttr, FileType as Ext4FileType, OpenFlags, INODE_BLOCK_SIZE,
-};
+use ext4_rs::{FileAttr as Ext4FileAttr, FileType as Ext4FileType, INODE_BLOCK_SIZE};
 use fuser::{FileAttr, FileType, TimeOrNow};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
-
-/// File handler for fuse filesystem
-pub struct FileHandler {
-    pub id: u64,
-    pub inode: u32,
-    pub offset: usize,
-    pub flags: OpenFlags,
-}
-
-impl FileHandler {
-    pub fn new(id: u64, inode: u32, flags: OpenFlags) -> Self {
-        Self {
-            id,
-            inode,
-            offset: 0,
-            flags,
-        }
-    }
-}
-
-/// Directory handler for fuse filesystem
-pub struct DirHandler {
-    pub id: u64,
-    pub entries: Vec<DirEntry>,
-    pub cur: usize,
-}
-
-impl DirHandler {
-    pub fn new(id: u64, entries: Vec<DirEntry>) -> Self {
-        Self {
-            id,
-            cur: 0,
-            entries,
-        }
-    }
-
-    pub fn next_entry(&mut self) -> Option<DirEntry> {
-        let entry = if self.cur < self.entries.len() {
-            Some(self.entries[self.cur].clone())
-        } else {
-            None
-        };
-        self.cur += 1;
-        entry
-    }
-}
 
 pub fn translate_ftype(file_type: Ext4FileType) -> FileType {
     match file_type {

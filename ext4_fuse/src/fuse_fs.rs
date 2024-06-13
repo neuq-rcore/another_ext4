@@ -15,14 +15,12 @@
 //! can save and restore checkpoint states like `RefFS`, and thus support
 //! Metis model check.
 
-use super::common::{
-    sys_time2second, time_or_now2second, translate_attr, translate_ftype, DirHandler, FileHandler,
-};
+use super::common::{sys_time2second, time_or_now2second, translate_attr, translate_ftype};
 use crate::block_dev::StateBlockDevice;
-use ext4_rs::{DirEntry, ErrCode, Ext4, Ext4Error, InodeMode, OpenFlags};
+use ext4_rs::{ErrCode, Ext4, Ext4Error, InodeMode};
 use fuser::{
-    FileAttr, FileType, Filesystem, ReplyAttr, ReplyCreate, ReplyData, ReplyEmpty, ReplyEntry,
-    ReplyOpen, ReplyWrite, Request,
+    FileAttr, FileType, Filesystem, ReplyAttr, ReplyCreate, ReplyData, ReplyDirectory, ReplyEmpty,
+    ReplyEntry, ReplyOpen, ReplyWrite, Request,
 };
 use std::collections::HashMap;
 use std::ffi::{c_int, OsStr};
@@ -39,12 +37,8 @@ pub struct StateExt4FuseFs<T> {
     fs: Ext4,
     /// Checkpoint states
     states: HashMap<StateKey, T>,
-    /// Opened files
-    files: Vec<FileHandler>,
     /// Next file handler id
     next_fid: FId,
-    /// Opened directories
-    dirs: Vec<DirHandler>,
     /// Next directory handler id
     next_did: FId,
 }
@@ -58,9 +52,9 @@ impl<T: 'static> StateExt4FuseFs<T> {
             fs: Ext4::load(block_dev.clone()).unwrap(),
             block_dev,
             states: HashMap::new(),
-            files: Vec::new(),
+            // files: Vec::new(),
             next_fid: 0,
-            dirs: Vec::new(),
+            // dirs: Vec::new(),
             next_did: 0,
         }
     }
@@ -82,29 +76,7 @@ impl<T: 'static> StateExt4FuseFs<T> {
         }
     }
 
-    /// Add a file handler to file list
-    fn add_file(&mut self, inode: u32, flags: OpenFlags) -> FId {
-        self.files
-            .push(FileHandler::new(self.next_did, inode, flags));
-        self.next_fid += 1;
-        self.next_fid - 1
-    }
-
-    fn release_file(&mut self, fh: FId) {
-        self.files.retain(|f| f.id != fh);
-    }
-
-    /// Add a directory handler to directory list
-    fn add_dir(&mut self, entries: Vec<DirEntry>) -> FId {
-        self.dirs.push(DirHandler::new(self.next_did, entries));
-        self.next_did += 1;
-        self.next_did - 1
-    }
-
-    fn release_dir(&mut self, did: FId) {
-        self.dirs.retain(|d| d.id != did);
-    }
-
+    /// Get file attribute and tranlate type
     fn get_attr(&self, inode: u32) -> Result<FileAttr, Ext4Error> {
         match self.fs.getattr(inode) {
             Ok(attr) => Ok(translate_attr(attr)),
@@ -173,7 +145,7 @@ impl<T: 'static> Filesystem for StateExt4FuseFs<T> {
         name: &OsStr,
         mode: u32,
         _umask: u32,
-        flags: i32,
+        _flags: i32,
         reply: ReplyCreate,
     ) {
         match self.fs.create(
@@ -182,14 +154,20 @@ impl<T: 'static> Filesystem for StateExt4FuseFs<T> {
             InodeMode::from_bits_truncate(mode as u16),
         ) {
             Ok(ino) => {
-                let fid = self.add_file(ino, OpenFlags::from_bits_truncate(flags as u32));
-                reply.created(&get_ttl(), &self.get_attr(ino).unwrap(), 0, fid, 0);
+                reply.created(
+                    &get_ttl(),
+                    &self.get_attr(ino).unwrap(),
+                    0,
+                    self.next_fid,
+                    0,
+                );
+                self.next_fid += 1;
             }
             Err(e) => reply.error(e.code() as i32),
         }
     }
 
-    fn open(&mut self, _req: &Request<'_>, ino: u64, flags: i32, reply: ReplyOpen) {
+    fn open(&mut self, _req: &Request<'_>, ino: u64, _flags: i32, reply: ReplyOpen) {
         let attr = self.get_attr(ino as u32);
         match attr {
             Ok(attr) => {
@@ -199,8 +177,8 @@ impl<T: 'static> Filesystem for StateExt4FuseFs<T> {
             }
             Err(e) => return reply.error(e.code() as i32),
         }
-        let fid = self.add_file(ino as u32, OpenFlags::from_bits_truncate(flags as u32));
-        reply.opened(fid, 0);
+        reply.opened(self.next_fid, 0);
+        self.next_fid += 1;
     }
 
     fn read(
@@ -214,10 +192,6 @@ impl<T: 'static> Filesystem for StateExt4FuseFs<T> {
         _lock_owner: Option<u64>,
         reply: ReplyData,
     ) {
-        // let fh = match self.files.iter_mut().find(|f| f.id == fh) {
-        //     Some(f) => f,
-        //     None => return reply.error(ErrCode::ENOENT as i32),
-        // };
         let mut data = vec![0; size as usize];
         match self.fs.read(ino as u32, offset as usize, &mut data) {
             Ok(sz) => reply.data(&data[..sz]),
@@ -247,13 +221,12 @@ impl<T: 'static> Filesystem for StateExt4FuseFs<T> {
         &mut self,
         _req: &Request<'_>,
         _ino: u64,
-        fh: u64,
+        _fh: u64,
         _flags: i32,
         _lock_owner: Option<u64>,
         _flush: bool,
         reply: ReplyEmpty,
     ) {
-        self.release_file(fh);
         reply.ok();
     }
 
@@ -322,10 +295,13 @@ impl<T: 'static> Filesystem for StateExt4FuseFs<T> {
     }
 
     fn opendir(&mut self, _req: &Request<'_>, ino: u64, _flags: i32, reply: ReplyOpen) {
-        match self.fs.list(ino as u32) {
-            Ok(entries) => {
-                let fh = self.add_dir(entries);
-                reply.opened(fh, 0);
+        match self.get_attr(ino as u32) {
+            Ok(attr) => {
+                if attr.kind != FileType::Directory {
+                    return reply.error(ErrCode::ENOTDIR as i32);
+                }
+                reply.opened(self.next_did, 0);
+                self.next_did += 1;
             }
             Err(e) => reply.error(e.code() as i32),
         }
@@ -335,31 +311,31 @@ impl<T: 'static> Filesystem for StateExt4FuseFs<T> {
         &mut self,
         _req: &Request<'_>,
         ino: u64,
-        fh: u64,
-        _offset: i64,
-        mut reply: fuser::ReplyDirectory,
+        _fh: u64,
+        offset: i64,
+        mut reply: ReplyDirectory,
     ) {
-        let dir = self.dirs.iter_mut().find(|d| d.id == fh);
-        match dir {
-            Some(dir) => {
-                loop {
-                    let entry = dir.next_entry();
-                    if entry.is_none() {
-                        break;
-                    }
-                    let entry = entry.unwrap();
+        let entries = self.fs.list(ino as u32);
+        match entries {
+            Ok(entries) => {
+                let mut i = offset as usize;
+                while i < entries.len() {
+                    let entry = &entries[i];
                     if reply.add(
                         ino,
-                        dir.cur as i64,
+                        i as i64 + 1,
                         translate_ftype(self.fs.getattr(entry.inode()).unwrap().ftype),
                         entry.name().unwrap(),
                     ) {
                         break;
                     }
+                    i += 1;
                 }
                 reply.ok();
             }
-            None => reply.error(-1),
+            Err(e) => {
+                reply.error(e.code() as i32);
+            }
         }
     }
 
@@ -367,11 +343,10 @@ impl<T: 'static> Filesystem for StateExt4FuseFs<T> {
         &mut self,
         _req: &Request<'_>,
         _ino: u64,
-        fh: u64,
+        _fh: u64,
         _flags: i32,
         reply: ReplyEmpty,
     ) {
-        self.release_dir(fh);
         reply.ok();
     }
 
