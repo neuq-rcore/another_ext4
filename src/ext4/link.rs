@@ -44,20 +44,22 @@ impl Ext4 {
         self.dir_remove_entry(parent, name)?;
 
         let child_link_cnt = child.inode.link_count();
-        if child.inode.is_dir() && child_link_cnt == 2 {
-            // If child is an empty directory
+        if child.inode.is_dir() && child_link_cnt <= 2 {
+            // Child is an empty directory
             // Unlink "child/.."
             parent.inode.set_link_count(parent.inode.link_count() - 1);
             self.write_inode_with_csum(parent);
             // Remove directory
-            return self.free_inode(child);
-        } else if child_link_cnt == 1 {
+            self.free_inode(child)
+        } else if child_link_cnt <= 1 {
+            // Child is a file
             // Remove file
-            return self.free_inode(child);
+            self.free_inode(child)
+        } else {
+            // Not remove
+            child.inode.set_link_count(child_link_cnt - 1);
+            self.write_inode_with_csum(child);
+            Ok(())
         }
-        // Not remove
-        child.inode.set_link_count(child_link_cnt - 1);
-        self.write_inode_with_csum(child);
-        Ok(())
     }
 }

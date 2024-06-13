@@ -53,8 +53,6 @@ impl Ext4 {
         for pblock in pblocks {
             // Deallocate the block
             self.dealloc_block(inode, pblock)?;
-            // Update inode block count
-            inode.inode.set_block_count(inode.inode.block_count() - 1);
             // Clear the block content
             self.write_block(&Block::new(pblock, [0; BLOCK_SIZE]));
         }
@@ -69,9 +67,6 @@ impl Ext4 {
         }
         // Deallocate the inode
         self.dealloc_inode(&inode)?;
-        // Clear the inode content
-        inode.inode = unsafe { core::mem::zeroed() };
-        self.write_inode_without_csum(inode);
         Ok(())
     }
 
