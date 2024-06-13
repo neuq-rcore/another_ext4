@@ -53,7 +53,7 @@ impl Ext4 {
             // Load the parent block from disk
             let mut block = self.read_block(fblock);
             // Try inserting the entry to parent block
-            if self.insert_entry_to_old_block(&mut block, child, name) {
+            if self.insert_entry_to_old_block(dir, child, name, &mut block) {
                 return Ok(());
             }
             // Current block has no enough space
@@ -66,7 +66,7 @@ impl Ext4 {
         // Load new block
         let mut new_block = self.read_block(fblock);
         // Write the entry to block
-        self.insert_entry_to_new_block(&mut new_block, child, name);
+        self.insert_entry_to_new_block(dir, child, name, &mut new_block);
         // Update inode size
         dir.inode.set_size(dir.inode.size() + BLOCK_SIZE as u64);
 
@@ -162,7 +162,13 @@ impl Ext4 {
 
     /// Insert a directory entry of a child inode into a new parent block.
     /// A new block must have enough space
-    fn insert_entry_to_new_block(&self, dst_blk: &mut Block, child: &InodeRef, name: &str) {
+    fn insert_entry_to_new_block(
+        &self,
+        dir: &InodeRef,
+        child: &InodeRef,
+        name: &str,
+        dst_blk: &mut Block,
+    ) {
         // Set the entry
         let rec_len = BLOCK_SIZE - size_of::<DirEntryTail>();
         let new_entry = DirEntry::new(child.id, rec_len as u16, name, child.inode.file_type());
@@ -170,10 +176,13 @@ impl Ext4 {
         dst_blk.write_offset_as(0, &new_entry);
 
         // Set tail
-        let mut tail = DirEntryTail::default();
-        tail.rec_len = size_of::<DirEntryTail>() as u16;
-        tail.reserved_ft = 0xDE;
-        tail.set_csum(&self.read_super_block(), &new_entry, &dst_blk.data[..]);
+        let mut tail = DirEntryTail::new();
+        tail.set_csum(
+            &self.read_super_block().uuid(),
+            dir.id,
+            dir.inode.generation(),
+            &dst_blk,
+        );
         // Copy tail to block
         let tail_offset = BLOCK_SIZE - size_of::<DirEntryTail>();
         dst_blk.write_offset_as(tail_offset, &tail);
@@ -184,7 +193,13 @@ impl Ext4 {
 
     /// Try insert a directory entry of child inode into a parent block.
     /// Return true if the entry is successfully inserted.
-    fn insert_entry_to_old_block(&self, dst_blk: &mut Block, child: &InodeRef, name: &str) -> bool {
+    fn insert_entry_to_old_block(
+        &self,
+        dir: &InodeRef,
+        child: &InodeRef,
+        name: &str,
+        dst_blk: &mut Block,
+    ) -> bool {
         let required_size = DirEntry::required_size(name.len());
         let mut offset = 0;
 
@@ -216,7 +231,12 @@ impl Ext4 {
             // Set tail csum
             let tail_offset = BLOCK_SIZE - size_of::<DirEntryTail>();
             let mut tail = dst_blk.read_offset_as::<DirEntryTail>(tail_offset);
-            tail.set_csum(&self.read_super_block(), &de, &dst_blk.data[offset..]);
+            tail.set_csum(
+                &self.read_super_block().uuid(),
+                dir.id,
+                dir.inode.generation(),
+                &dst_blk,
+            );
             // Write tail to blk_data
             dst_blk.write_offset_as(tail_offset, &tail);
 

@@ -9,9 +9,6 @@
 
 use super::crc::*;
 use super::AsBytes;
-use super::BlockDevice;
-use super::BlockGroupRef;
-use super::SuperBlock;
 use super::{ExtentNode, ExtentNodeMut};
 use crate::constants::*;
 use crate::prelude::*;
@@ -81,39 +78,33 @@ impl InodeMode {
     }
 }
 
-#[derive(Debug, Clone)]
-pub struct FileAttr {
-    pub ino: InodeId,
-    pub size: u64,
-    pub atime: u32,
-    pub mtime: u32,
-    pub ctime: u32,
-    pub crtime: u32,
-    pub blocks: u64,
-    pub ftype: FileType,
-    pub perm: InodeMode,
-    pub links: u16,
-    pub uid: u32,
-    pub gid: u32,
-}
-
 #[repr(C)]
 #[derive(Debug, Clone)]
 pub struct Linux2 {
     /// Upper 16-bits of the block count. See the note attached to i_blocks_lo.
-    pub l_blocks_hi: u16,
+    l_blocks_hi: u16,
     /// Upper 16-bits of the extended attribute block.
-    pub l_file_acl_hi: u16,
+    l_file_acl_hi: u16,
     /// Upper 16-bits of the Owner UID.
-    pub l_uid_hi: u16,
+    l_uid_hi: u16,
     /// Upper 16-bits of the GID.
-    pub l_gid_hi: u16,
+    l_gid_hi: u16,
     /// Lower 16-bits of the inode checksum.
-    pub l_checksum_lo: u16,
+    l_checksum_lo: u16,
     /// Reserved.
-    pub l_reserved: u16,
+    l_reserved: u16,
 }
 
+/// The I-node Structure.
+///
+/// In ext2 and ext3, the inode structure size was fixed at 128 bytes
+/// (EXT2_GOOD_OLD_INODE_SIZE) and each inode had a disk record size of
+/// 128 bytes. By default, ext4 inode records are 256 bytes, and (as of
+/// October 2013) the inode structure is 156 bytes (i_extra_isize = 28).
+///
+/// We only implement the larger version for simplicity. Guarantee that
+/// `sb.inode_size` equals to 256. This value will be checked when
+/// loading the filesystem.
 #[repr(C)]
 #[derive(Debug, Clone)]
 pub struct Inode {
@@ -303,6 +294,10 @@ impl Inode {
         self.osd2.l_blocks_hi = (cnt >> 32) as u16;
     }
 
+    pub fn generation(&self) -> u32 {
+        self.generation
+    }
+
     pub fn set_generation(&mut self, generation: u32) {
         self.generation = generation;
     }
@@ -313,14 +308,6 @@ impl Inode {
 
     pub fn set_flags(&mut self, f: u32) {
         self.flags |= f;
-    }
-
-    fn copy_to_byte_slice(&self, slice: &mut [u8]) {
-        unsafe {
-            let inode_ptr = self as *const Inode as *const u8;
-            let array_ptr = slice.as_ptr() as *mut u8;
-            core::ptr::copy_nonoverlapping(inode_ptr, array_ptr, 0x9c);
-        }
     }
 
     /* Extent methods */
@@ -360,99 +347,28 @@ impl InodeRef {
         Self { id, inode }
     }
 
-    pub fn load_from_disk(
-        block_device: &dyn BlockDevice,
-        super_block: &SuperBlock,
-        id: InodeId,
-    ) -> Self {
-        let (block_id, offset) = Self::disk_pos(super_block, block_device, id);
-        let block = block_device.read_block(block_id);
-        Self {
-            id,
-            inode: block.read_offset_as(offset),
-        }
+    pub fn set_checksum(&mut self, uuid: &[u8]) {
+        let mut checksum = crc32(CRC32_INIT, uuid);
+        checksum = crc32(checksum, &self.id.to_le_bytes());
+        checksum = crc32(checksum, &self.inode.generation.to_le_bytes());
+        checksum = crc32(checksum, &self.inode.to_bytes());
+        self.inode.osd2.l_checksum_lo = checksum as u16;
+        self.inode.checksum_hi = (checksum >> 16) as u16;
     }
+}
 
-    pub fn sync_to_disk_without_csum(
-        &self,
-        block_device: &dyn BlockDevice,
-        super_block: &SuperBlock,
-    ) {
-        let (block_id, offset) = Self::disk_pos(super_block, block_device, self.id);
-        let mut block = block_device.read_block(block_id);
-        block.write_offset_as(offset, &self.inode);
-        block_device.write_block(&block)
-    }
-
-    pub fn sync_to_disk_with_csum(
-        &mut self,
-        block_device: &dyn BlockDevice,
-        super_block: &SuperBlock,
-    ) {
-        self.set_checksum(super_block);
-        self.sync_to_disk_without_csum(block_device, super_block);
-    }
-
-    /// Find the position of an inode in the block device. Return the
-    /// block id and the offset within the block.
-    ///
-    /// Each block group contains `sb.inodes_per_group` inodes.
-    /// Because inode 0 is defined not to exist, this formula can
-    /// be used to find the block group that an inode lives in:
-    /// `bg = (inode_id - 1) / sb.inodes_per_group`.
-    ///
-    /// The particular inode can be found within the block group's
-    /// inode table at `index = (inode_id - 1) % sb.inodes_per_group`.
-    /// To get the byte address within the inode table, use
-    /// `offset = index * sb.inode_size`.
-    fn disk_pos(
-        super_block: &SuperBlock,
-        block_device: &dyn BlockDevice,
-        inode_id: InodeId,
-    ) -> (PBlockId, usize) {
-        let inodes_per_group = super_block.inodes_per_group();
-        let group = ((inode_id - 1) / inodes_per_group) as BlockGroupId;
-        let inode_size = super_block.inode_size() as usize;
-        let index = ((inode_id - 1) % inodes_per_group) as usize;
-
-        let bg = BlockGroupRef::load_from_disk(block_device, super_block, group);
-        let block_id =
-            bg.desc.inode_table_first_block() + (index * inode_size / BLOCK_SIZE) as PBlockId;
-        let offset = (index * inode_size) % BLOCK_SIZE;
-        (block_id, offset)
-    }
-
-    fn set_checksum(&mut self, super_block: &SuperBlock) {
-        let inode_size = super_block.inode_size();
-
-        let ino_index = self.id as u32;
-        let ino_gen = self.inode.generation;
-
-        // Preparation: temporarily set bg checksum to 0
-        self.inode.osd2.l_checksum_lo = 0;
-        self.inode.checksum_hi = 0;
-
-        let mut checksum = ext4_crc32c(
-            CRC32_INIT,
-            &super_block.uuid(),
-            super_block.uuid().len() as u32,
-        );
-        checksum = ext4_crc32c(checksum, &ino_index.to_le_bytes(), 4);
-        checksum = ext4_crc32c(checksum, &ino_gen.to_le_bytes(), 4);
-
-        let mut raw_data = [0u8; 0x100];
-        self.inode.copy_to_byte_slice(&mut raw_data);
-
-        // inode checksum
-        checksum = ext4_crc32c(checksum, &raw_data, inode_size as u32);
-
-        if inode_size == 128 {
-            checksum &= 0xFFFF;
-        }
-
-        self.inode.osd2.l_checksum_lo = ((checksum << 16) >> 16) as u16;
-        if super_block.inode_size() > 128 {
-            self.inode.checksum_hi = (checksum >> 16) as u16;
-        }
-    }
+#[derive(Debug, Clone)]
+pub struct FileAttr {
+    pub ino: InodeId,
+    pub size: u64,
+    pub atime: u32,
+    pub mtime: u32,
+    pub ctime: u32,
+    pub crtime: u32,
+    pub blocks: u64,
+    pub ftype: FileType,
+    pub perm: InodeMode,
+    pub links: u16,
+    pub uid: u32,
+    pub gid: u32,
 }

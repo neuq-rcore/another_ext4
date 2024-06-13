@@ -1,11 +1,11 @@
 pub struct Bitmap<'a>(&'a mut [u8]);
 
 impl<'a> Bitmap<'a> {
-    pub fn new(bmap: &'a mut [u8]) -> Self {
-        Self(bmap)
+    pub fn new(bmap: &'a mut [u8], nbits: usize) -> Self {
+        Self(&mut bmap[..(nbits + 7) / 8])
     }
 
-    pub fn as_raw(&self) -> &[u8] {
+    pub fn as_bytes(&self) -> &[u8] {
         self.0
     }
 

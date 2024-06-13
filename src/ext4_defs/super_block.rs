@@ -3,10 +3,7 @@
 //! Super Block is the first field of Ext4 Block Group.
 //!
 //! See [`super::block_group`] for details.
-
 use super::AsBytes;
-use super::BlockDevice;
-use crate::constants::*;
 use crate::prelude::*;
 
 // 结构体表示超级块
@@ -121,17 +118,6 @@ impl SuperBlock {
         self.magic == Self::SB_MAGIC
     }
 
-    pub fn load_from_disk(block_device: &dyn BlockDevice) -> Self {
-        let block = block_device.read_block(0);
-        block.read_offset_as(BASE_OFFSET)
-    }
-
-    pub fn sync_to_disk(&self, block_device: &dyn BlockDevice) {
-        let mut block = block_device.read_block(0);
-        block.write_offset_as(BASE_OFFSET, self);
-        block_device.write_block(&block)
-    }
-
     pub fn first_data_block(&self) -> u32 {
         self.first_data_block
     }
@@ -140,58 +126,49 @@ impl SuperBlock {
         self.free_inode_count
     }
 
-    pub fn features_read_only(&self) -> u32 {
-        self.features_read_only
+    pub fn uuid(&self) -> [u8; 16] {
+        self.uuid
     }
 
-    pub fn creator_os(&self) -> u32 {
-        self.creator_os
-    }
-
-    /// Returns total number of inodes.
+    /// Total number of inodes.
+    #[allow(unused)]
     pub fn inode_count(&self) -> u32 {
         self.inode_count
     }
 
-    /// Returns total number of blocks.
+    /// Total number of blocks.
     pub fn block_count(&self) -> u64 {
         self.block_count_lo as u64 | ((self.block_count_hi as u64) << 32)
     }
 
-    /// Returns the number of blocks in each block group.
+    /// The number of blocks in each block group.
+    #[allow(unused)]
     pub fn blocks_per_group(&self) -> u32 {
         self.blocks_per_group
     }
 
-    /// Returns the size of block.
-    pub fn block_size(&self) -> u32 {
-        1024 << self.log_block_size
-    }
-
-    /// Returns the number of inodes in each block group.
+    /// The number of inodes in each block group.
     pub fn inodes_per_group(&self) -> u32 {
         self.inodes_per_group
     }
 
-    /// Returns the number of block groups.
+    /// The number of block groups.
     pub fn block_group_count(&self) -> u32 {
         ((self.block_count() + self.blocks_per_group as u64 - 1) / self.blocks_per_group as u64)
             as u32
     }
 
-    /// Returns the size of inode structure.
-    pub fn inode_size(&self) -> u16 {
-        self.inode_size
+    /// The size of inode.
+    pub fn inode_size(&self) -> usize {
+        self.inode_size as usize
     }
 
-    pub fn uuid(&self) -> [u8; 16] {
-        self.uuid
+    /// The size of block group descriptor.
+    pub fn desc_size(&self) -> usize {
+        self.desc_size as usize
     }
 
-    pub fn desc_size(&self) -> u16 {
-        self.desc_size
-    }
-
+    #[allow(unused)]
     pub fn extra_size(&self) -> u16 {
         self.want_extra_isize
     }
@@ -206,8 +183,8 @@ impl SuperBlock {
         }
     }
 
-    pub fn decrease_free_inodes_count(&mut self) {
-        self.free_inode_count -= 1;
+    pub fn set_free_inodes_count(&mut self, count: u32) {
+        self.free_inode_count = count;
     }
 
     pub fn free_blocks_count(&self) -> u64 {

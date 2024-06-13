@@ -65,11 +65,3 @@ impl OpenFlags {
         }
     }
 }
-
-#[derive(Copy, PartialEq, Eq, Clone, Debug)]
-#[allow(unused)]
-pub enum SeekFrom {
-    Start(usize),
-    End(isize),
-    Current(isize),
-}

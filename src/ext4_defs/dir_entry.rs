@@ -6,16 +6,16 @@
 use super::crc::*;
 use super::AsBytes;
 use super::FileType;
-use super::SuperBlock;
 use crate::constants::*;
 use crate::format_error;
 use crate::prelude::*;
+use crate::Block;
 
 #[repr(C)]
 #[derive(Clone, Copy)]
 pub union DirEnInner {
-    pub name_length_high: u8, // 高8位的文件名长度
-    pub inode_type: FileType, // 引用的inode的类型（在rev >= 0.5中）
+    name_length_high: u8, // 高8位的文件名长度
+    inode_type: FileType, // 引用的inode的类型（在rev >= 0.5中）
 }
 
 impl Debug for DirEnInner {
@@ -163,40 +163,36 @@ impl DirEntry {
     pub fn used_size(&self) -> usize {
         Self::required_size(self.name_len as usize)
     }
-
-    pub fn calc_csum(&self, s: &SuperBlock, blk_data: &[u8]) -> u32 {
-        let ino_index = self.inode;
-        let ino_gen = 0 as u32;
-
-        let uuid = s.uuid();
-
-        let mut csum = ext4_crc32c(CRC32_INIT, &uuid, uuid.len() as u32);
-        csum = ext4_crc32c(csum, &ino_index.to_le_bytes(), 4);
-        csum = ext4_crc32c(csum, &ino_gen.to_le_bytes(), 4);
-        let mut data = [0u8; 0xff4];
-        unsafe {
-            core::ptr::copy_nonoverlapping(blk_data.as_ptr(), data.as_mut_ptr(), blk_data.len());
-        }
-        csum = ext4_crc32c(csum, &data[..], 0xff4);
-        csum
-    }
 }
 
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy)]
 #[repr(C)]
 pub struct DirEntryTail {
-    pub reserved_zero1: u32,
-    pub rec_len: u16,
-    pub reserved_zero2: u8,
-    pub reserved_ft: u8,
-    pub checksum: u32, // crc32c(uuid+inum+dirblock)
+    reserved_zero1: u32,
+    rec_len: u16,
+    reserved_zero2: u8,
+    reserved_ft: u8,
+    checksum: u32, // crc32c(uuid+inum+dirblock)
 }
 
 unsafe impl AsBytes for DirEntryTail {}
 
 impl DirEntryTail {
-    pub fn set_csum(&mut self, s: &SuperBlock, diren: &DirEntry, blk_data: &[u8]) {
-        self.checksum = diren.calc_csum(s, blk_data);
+    pub fn new() -> Self {
+        Self {
+            reserved_zero1: 0,
+            rec_len: 12,
+            reserved_zero2: 0,
+            reserved_ft: 0xDE,
+            checksum: 0,
+        }
+    }
+
+    pub fn set_csum(&mut self, uuid: &[u8], ino: InodeId, ino_gen: u32, block: &Block) {
+        let mut csum = crc32(CRC32_INIT, &uuid);
+        csum = crc32(csum, &ino.to_le_bytes());
+        csum = crc32(csum, &ino_gen.to_le_bytes());
+        self.checksum = crc32(csum, &block.data[..size_of::<DirEntryTail>()]);
     }
 }
 

@@ -50,26 +50,16 @@ const CRC32C_TAB: [u32; 256] = [
     0x79B737BA, 0x8BDCB4B9, 0x988C474D, 0x6AE7C44E, 0xBE2DA0A5, 0x4C4623A6, 0x5F16D052, 0xAD7D5351,
 ];
 
-/// 计算CRC32校验和
-/// 参数 crc 初始值
-/// 参数 buf 缓冲区
-/// 参数 size 缓冲区大小
-/// 参数 tab 查找表
-fn crc32(crc: u32, buf: &[u8], size: u32, tab: &[u32]) -> u32 {
-    let mut crc = crc;
-    let mut p = buf;
-    let mut size = size as usize;
-
-    // 循环更新crc值
-    while size > 0 {
-        crc = tab[(crc as u8 ^ p[0]) as usize] ^ (crc >> 8);
-        p = &p[1..];
-        size -= 1;
+/// Calc CRC32 checksum on a byte slice
+///
+/// # Params
+///
+/// * `crc_init`: initial CRC value
+/// * `data`: data to calculate CRC32 checksum
+pub fn crc32(crc_init: u32, data: &[u8]) -> u32 {
+    let mut crc = crc_init;
+    for byte in data {
+        crc = CRC32C_TAB[(crc as u8 ^ byte) as usize] ^ (crc >> 8);
     }
-
     crc
-}
-
-pub fn ext4_crc32c(crc: u32, buf: &[u8], size: u32) -> u32 {
-    crc32(crc, buf, size, &CRC32C_TAB)
 }
