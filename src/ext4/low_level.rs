@@ -23,12 +23,12 @@ impl Ext4 {
     ///
     /// # Error
     ///
-    /// `EINVAL` if the inode is invalid (mode == 0).
+    /// `EINVAL` if the inode is invalid (link count == 0).
     pub fn getattr(&self, id: InodeId) -> Result<FileAttr> {
         let inode = self.read_inode(id);
-        if inode.inode.mode().bits() == 0 {
-            return_error!(ErrCode::EINVAL, "Invalid inode");
-        }
+        // if inode.inode.link_count() == 0 {
+        //     return_error!(ErrCode::EINVAL, "Invalid inode {}", id);
+        // }
         Ok(FileAttr {
             ino: id,
             size: inode.inode.size(),
@@ -76,7 +76,7 @@ impl Ext4 {
     ) -> Result<()> {
         let mut inode = self.read_inode(id);
         if inode.inode.mode().bits() == 0 {
-            return_error!(ErrCode::EINVAL, "Invalid inode");
+            return_error!(ErrCode::EINVAL, "Invalid inode {}", id);
         }
         if let Some(mode) = mode {
             inode.inode.set_mode(mode);

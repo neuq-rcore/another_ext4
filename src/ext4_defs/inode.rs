@@ -349,7 +349,7 @@ impl Inode {
 }
 
 /// A combination of an `Inode` and its id
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct InodeRef {
     pub id: InodeId,
     pub inode: Inode,

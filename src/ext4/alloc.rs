@@ -21,7 +21,7 @@ impl Ext4 {
         // Sync the inode to disk
         self.write_inode_with_csum(&mut inode_ref);
 
-        info!("Alloc inode {} ok", inode_ref.id);
+        trace!("Alloc inode {} ok", inode_ref.id);
         Ok(inode_ref)
     }
 
@@ -139,7 +139,7 @@ impl Ext4 {
 
         self.write_block_group_with_csum(&mut bg);
 
-        info!("Alloc block {} ok", fblock);
+        trace!("Alloc block {} ok", fblock);
         Ok(fblock)
     }
 
@@ -180,7 +180,7 @@ impl Ext4 {
 
         self.write_block_group_with_csum(&mut bg);
 
-        info!("Free block {} ok", pblock);
+        trace!("Free block {} ok", pblock);
         Ok(())
     }
 
@@ -250,7 +250,7 @@ impl Ext4 {
             return Ok(inode_id);
         }
 
-        log::info!("no free inode");
+        trace!("no free inode");
         return_error!(ErrCode::ENOSPC, "No free inodes in block group {}", bgid);
     }
 
