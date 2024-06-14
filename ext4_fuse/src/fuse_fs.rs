@@ -17,7 +17,7 @@
 
 use super::common::{sys_time2second, time_or_now2second, translate_attr, translate_ftype};
 use crate::block_dev::StateBlockDevice;
-use ext4_rs::{ErrCode, Ext4, Ext4Error, InodeMode};
+use ext4_rs::{ErrCode, Ext4, Ext4Error, FileType as Ext4FileType, InodeMode};
 use fuser::{
     FileAttr, FileType, Filesystem, ReplyAttr, ReplyCreate, ReplyData, ReplyDirectory, ReplyEmpty,
     ReplyEntry, ReplyOpen, ReplyWrite, Request,
@@ -275,9 +275,23 @@ impl<T: 'static> Filesystem for StateExt4FuseFs<T> {
         if parent == newparent && name == newname {
             return reply.ok();
         }
-        // Check if newname is already in use
-        if let Ok(_) = self.fs.lookup(newparent as u32, newname.to_str().unwrap()) {
-            return reply.error(ErrCode::EEXIST as i32);
+        if let Ok(src) = self.fs.lookup(parent as u32, name.to_str().unwrap()) {
+            // Check if newname is already in use
+            if let Ok(des) = self.fs.lookup(newparent as u32, newname.to_str().unwrap()) {
+                if self.fs.getattr(src).unwrap().ftype == Ext4FileType::Directory
+                    && self.fs.getattr(des).unwrap().ftype == Ext4FileType::Directory
+                    && self.fs.list(des).unwrap().len() <= 2
+                {
+                    // Overwrite empty directory
+                    if let Err(e) = self.fs.rmdir(newparent as u32, newname.to_str().unwrap()) {
+                        return reply.error(e.code() as i32);
+                    }
+                } else {
+                    return reply.error(ErrCode::ENOTEMPTY as i32);
+                }
+            }
+        } else {
+            return reply.error(ErrCode::ENOENT as i32);
         }
         match self.fs.rename(
             parent as u32,
