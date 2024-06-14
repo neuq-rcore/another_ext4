@@ -413,6 +413,50 @@ impl<T: 'static> Filesystem for StateExt4FuseFs<T> {
             }
         }
     }
+
+    fn getxattr(
+        &mut self,
+        _req: &Request<'_>,
+        ino: u64,
+        name: &OsStr,
+        _size: u32,
+        reply: fuser::ReplyXattr,
+    ) {
+        let name = name.to_str().unwrap();
+        match self.fs.getxattr(ino as u32, name) {
+            Ok(value) => reply.data(&value),
+            Err(e) => reply.error(e.code() as i32),
+        }
+    }
+
+    fn setxattr(
+        &mut self,
+        _req: &Request<'_>,
+        ino: u64,
+        name: &OsStr,
+        value: &[u8],
+        _flags: i32,
+        _position: u32,
+        reply: ReplyEmpty,
+    ) {
+        let name = name.to_str().unwrap();
+        // Check conflict
+        if let Ok(_) = self.fs.getxattr(ino as u32, name) {
+            return reply.error(ErrCode::EEXIST as i32);
+        }
+        match self.fs.setxattr(ino as u32, name, value) {
+            Ok(_) => reply.ok(),
+            Err(e) => reply.error(e.code() as i32),
+        }
+    }
+
+    fn removexattr(&mut self, _req: &Request<'_>, ino: u64, name: &OsStr, reply: ReplyEmpty) {
+        let name = name.to_str().unwrap();
+        match self.fs.removexattr(ino as u32, name) {
+            Ok(_) => reply.ok(),
+            Err(e) => reply.error(e.code() as i32),
+        }
+    }
 }
 
 fn get_ttl() -> Duration {
