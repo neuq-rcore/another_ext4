@@ -89,6 +89,11 @@ impl Ext4 {
             inode.inode.set_gid(gid);
         }
         if let Some(size) = size {
+            // If size increases, allocate new blocks if needed.
+            let required_blocks = (size as usize + INODE_BLOCK_SIZE - 1) / INODE_BLOCK_SIZE;
+            for _ in inode.inode.block_count()..required_blocks as u64 {
+                self.inode_append_block(&mut inode)?;
+            }
             inode.inode.set_size(size);
         }
         if let Some(atime) = atime {

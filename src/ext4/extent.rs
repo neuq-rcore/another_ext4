@@ -45,7 +45,9 @@ impl Ext4 {
         } else {
             Err(format_error!(
                 ErrCode::ENOENT,
-                "extent_query: extent not found"
+                "extent_query: inode {} query iblock {} not found",
+                inode_ref.id,
+                iblock
             ))
         }
     }
