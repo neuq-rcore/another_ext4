@@ -272,8 +272,6 @@ impl XattrBlock {
             entry_start += next_entry.used_size();
         }
         // Clear [entry_offset, value_offset)
-        trace!("Clearing [{}, {})", entry_start, value_end);
-        assert!(entry_start < value_end);
         self.0.data[entry_start..value_end].fill(0);
         true
     }
