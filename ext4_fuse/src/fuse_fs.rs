@@ -52,15 +52,14 @@ impl<T: 'static> StateExt4FuseFs<T> {
             fs: Ext4::load(block_dev.clone()).unwrap(),
             block_dev,
             states: HashMap::new(),
-            // files: Vec::new(),
             next_fid: 0,
-            // dirs: Vec::new(),
             next_did: 0,
         }
     }
 
     /// Save a state
     fn checkpoint(&mut self, key: StateKey) -> bool {
+        log::info!("Checkpoint {}", key);
         self.states
             .insert(key, self.block_dev.checkpoint())
             .is_none()
@@ -68,6 +67,7 @@ impl<T: 'static> StateExt4FuseFs<T> {
 
     /// Restore a state
     fn restore(&mut self, key: StateKey) -> bool {
+        log::info!("Restore {}", key);
         if let Some(state) = self.states.remove(&key) {
             self.block_dev.restore(state);
             true
@@ -419,12 +419,20 @@ impl<T: 'static> Filesystem for StateExt4FuseFs<T> {
         _req: &Request<'_>,
         ino: u64,
         name: &OsStr,
-        _size: u32,
+        size: u32,
         reply: fuser::ReplyXattr,
     ) {
         let name = name.to_str().unwrap();
         match self.fs.getxattr(ino as u32, name) {
-            Ok(value) => reply.data(&value),
+            Ok(value) => {
+                if size == 0 {
+                    reply.size(value.len() as u32);
+                } else if value.len() == size as usize {
+                    reply.data(&value);
+                } else {
+                    reply.error(ErrCode::ERANGE as i32);
+                }
+            }
             Err(e) => reply.error(e.code() as i32),
         }
     }

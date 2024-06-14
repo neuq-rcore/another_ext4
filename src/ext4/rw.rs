@@ -35,9 +35,6 @@ impl Ext4 {
         let (block_id, offset) = self.inode_disk_pos(inode_id);
         let block = self.read_block(block_id);
         let inode = InodeRef::new(inode_id, block.read_offset_as(offset));
-        if inode.inode.uid() != 0 {
-            panic!("Inode {:?} has invalid uid", inode);
-        }
         inode
     }
 
@@ -56,9 +53,6 @@ impl Ext4 {
 
     /// Write an inode to block device without checksum
     pub(super) fn write_inode_without_csum(&self, inode_ref: &InodeRef) {
-        if inode_ref.inode.uid() != 0 {
-            panic!();
-        }
         let (block_id, offset) = self.inode_disk_pos(inode_ref.id);
         let mut block = self.read_block(block_id);
         block.write_offset_as(offset, &inode_ref.inode);
