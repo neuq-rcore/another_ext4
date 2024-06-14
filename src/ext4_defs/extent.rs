@@ -52,11 +52,6 @@ impl ExtentHeader {
         }
     }
 
-    /// Loads an extent header from a data block.
-    pub fn load_from_block(block_data: &[u8]) -> &Self {
-        unsafe { &*(block_data.as_ptr() as *const ExtentHeader) }
-    }
-
     /// 获取extent header的条目数
     pub fn entries_count(&self) -> u16 {
         self.entries_count

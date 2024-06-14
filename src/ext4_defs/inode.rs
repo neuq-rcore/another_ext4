@@ -1,6 +1,4 @@
-//! # The Defination of Ext4 Inode Table Entry
-//!
-//! The inode table is a linear array of struct `Inode`. The table is sized to have
+//! The Inode Table is a linear array of struct `Inode`. The table is sized to have
 //! enough blocks to store at least `sb.inode_size * sb.inodes_per_group` bytes.
 //!
 //! The number of the block group containing an inode can be calculated as
@@ -308,6 +306,15 @@ impl Inode {
 
     pub fn set_flags(&mut self, f: u32) {
         self.flags |= f;
+    }
+
+    pub fn xattr_block(&self) -> PBlockId {
+        (self.osd2.l_file_acl_hi as u64) << 32 | self.file_acl as u64
+    }
+
+    pub fn set_xattr_block(&mut self, block: PBlockId) {
+        self.file_acl = block as u32;
+        self.osd2.l_file_acl_hi = (block >> 32) as u16;
     }
 
     /* Extent methods */

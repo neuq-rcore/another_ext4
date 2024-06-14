@@ -1,5 +1,3 @@
-//! # The Defination of Ext4 Directory Entry
-//!
 //! A directory is a series of data blocks and that each block contains a
 //! linear array of directory entries.
 
@@ -32,27 +30,31 @@ impl Default for DirEnInner {
     }
 }
 
+/// Directory entry.
 #[repr(C)]
 #[derive(Debug, Clone)]
 pub struct DirEntry {
-    inode: InodeId,    // 该目录项指向的inode的编号
-    rec_len: u16,      // 到下一个目录项的距离
-    name_len: u8,      // 低8位的文件名长度
-    inner: DirEnInner, // 联合体成员
-    name: [u8; 255],   // 文件名
+    /// 该目录项指向的inode的编号
+    inode: InodeId,
+    /// 到下一个目录项的距离
+    rec_len: u16,
+    /// 低8位的文件名长度
+    name_len: u8,
+    /// 联合体成员
+    inner: DirEnInner,
+    /// 文件名
+    name: [u8; 255],
 }
 
-impl Default for DirEntry {
-    fn default() -> Self {
-        Self {
-            inode: 0,
-            rec_len: 0,
-            name_len: 0,
-            inner: DirEnInner::default(),
-            name: [0; 255],
-        }
-    }
+/// Fake dir entry. A normal entry without `name` field
+#[repr(C)]
+pub struct FakeDirEntry {
+    inode: u32,
+    rec_len: u16,
+    name_len: u8,
+    inode_type: FileType,
 }
+unsafe impl AsBytes for FakeDirEntry {}
 
 /// The actual size of the directory entry is determined by `name_len`.
 /// So we need to implement `AsBytes` methods specifically for `DirEntry`.
@@ -195,14 +197,3 @@ impl DirEntryTail {
         self.checksum = crc32(csum, &block.data[..size_of::<DirEntryTail>()]);
     }
 }
-
-/// Fake dir entry. A normal entry without `name` field`
-#[repr(C)]
-pub struct FakeDirEntry {
-    inode: u32,
-    rec_len: u16,
-    name_len: u8,
-    inode_type: FileType,
-}
-
-unsafe impl AsBytes for FakeDirEntry {}

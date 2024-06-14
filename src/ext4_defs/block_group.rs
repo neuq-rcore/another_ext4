@@ -1,6 +1,4 @@
-//！# The Defination of Ext4 Block Group Description
-//!
-//! Block Group Descriptor is the second field of Ext4 Block Group.
+//! The Block Group Descriptor is the second field of Ext4 Block Group.
 //!
 //! | Super Block | Group Descriptor | Reserved GDT Blocks |
 //! | Block Bitmap | Inode Bitmap | Inode Table | Data Blocks |

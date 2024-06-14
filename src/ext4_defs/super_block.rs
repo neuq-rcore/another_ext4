@@ -1,8 +1,7 @@
-//! # The Defination of Ext4 Super Block
-//!
-//! Super Block is the first field of Ext4 Block Group.
+//! The Super Block is the first field of Ext4 Block Group.
 //!
 //! See [`super::block_group`] for details.
+
 use super::AsBytes;
 use crate::prelude::*;
 
