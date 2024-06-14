@@ -24,6 +24,7 @@ mod file;
 mod inode;
 mod mount_point;
 mod super_block;
+mod xattr;
 
 pub use bitmap::*;
 pub use block_device::*;
@@ -33,6 +34,7 @@ pub use extent::*;
 pub use file::*;
 pub use inode::*;
 pub use super_block::*;
+pub use xattr::*;
 
 /// All file types. Also matches the defination in directory entries.
 #[derive(PartialEq, Eq, Clone, Copy, Debug)]

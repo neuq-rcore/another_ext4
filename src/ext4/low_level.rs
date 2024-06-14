@@ -6,6 +6,7 @@
 use super::Ext4;
 use crate::constants::*;
 use crate::ext4_defs::*;
+use crate::format_error;
 use crate::prelude::*;
 use crate::return_error;
 use core::cmp::min;
@@ -447,5 +448,98 @@ impl Ext4 {
         }
         // Remove directory entry
         self.unlink_inode(&mut parent, &mut child, name)
+    }
+
+    /// Get extended attribute of a file.
+    ///
+    /// # Params
+    ///
+    /// * `inode` - the inode of the file
+    /// * `name` - the name of the attribute
+    ///
+    /// # Return
+    ///
+    /// `Ok(value)` - the value of the attribute
+    ///
+    /// # Error
+    ///
+    /// `ENODATA` - the attribute does not exist
+    pub fn getxattr(&self, inode: InodeId, name: &str) -> Result<Vec<u8>> {
+        let inode_ref = self.read_inode(inode);
+        let xattr_block_id = inode_ref.inode.xattr_block();
+        if xattr_block_id == 0 {
+            return_error!(ErrCode::ENODATA, "Xattr {} does not exist", name);
+        }
+        let xattr_block = XattrBlock::new(self.read_block(xattr_block_id));
+        match xattr_block.get(name) {
+            Some(value) => Ok(value.to_owned()),
+            None => Err(format_error!(
+                ErrCode::ENODATA,
+                "Xattr {} does not exist",
+                name
+            )),
+        }
+    }
+
+    /// Set extended attribute of a file. This function will not check name conflict.
+    /// Call `getxattr` to check beforehand.
+    ///
+    /// # Params
+    ///
+    /// * `inode` - the inode of the file
+    /// * `name` - the name of the attribute
+    /// * `value` - the value of the attribute
+    ///
+    /// # Error
+    ///
+    /// `ENOSPC` - xattr block does not have enough space
+    pub fn setxattr(&self, inode: InodeId, name: &str, value: &[u8]) -> Result<()> {
+        let mut inode_ref = self.read_inode(inode);
+        let xattr_block_id = inode_ref.inode.xattr_block();
+        if xattr_block_id == 0 {
+            // lazy allocate xattr block
+            let pblock = self.alloc_block(&mut inode_ref)?;
+            inode_ref.inode.set_xattr_block(pblock);
+            self.write_inode_with_csum(&mut inode_ref);
+        }
+        let mut xattr_block = XattrBlock::new(self.read_block(inode_ref.inode.xattr_block()));
+        if xattr_block_id == 0 {
+            xattr_block.init();
+        }
+        if xattr_block.insert(name, value) {
+            self.write_block(&xattr_block.block());
+            Ok(())
+        } else {
+            return_error!(
+                ErrCode::ENOSPC,
+                "Xattr block of Inode {} does not have enough space",
+                inode
+            );
+        }
+    }
+
+    /// Remove extended attribute of a file.
+    ///
+    /// # Params
+    ///
+    /// * `inode` - the inode of the file
+    /// * `name` - the name of the attribute
+    ///
+    /// # Error
+    ///
+    /// `ENODATA` - the attribute does not exist
+    pub fn removexattr(&self, inode: InodeId, name: &str) -> Result<()> {
+        let inode_ref = self.read_inode(inode);
+        let xattr_block_id = inode_ref.inode.xattr_block();
+        if xattr_block_id == 0 {
+            return_error!(ErrCode::ENODATA, "Xattr {} does not exist", name);
+        }
+        let mut xattr_block = XattrBlock::new(self.read_block(xattr_block_id));
+        if xattr_block.remove(name) {
+            self.write_block(&xattr_block.block());
+            Ok(())
+        } else {
+            return_error!(ErrCode::ENODATA, "Xattr {} does not exist", name);
+        }
     }
 }

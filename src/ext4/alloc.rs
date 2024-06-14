@@ -61,12 +61,19 @@ impl Ext4 {
         for pblock in pblocks {
             // Deallocate the block
             self.dealloc_block(inode, pblock)?;
-            // Tree blocks are not counted in `inode.block_count`
             // Clear the block content
             self.write_block(&Block::new(pblock, [0; BLOCK_SIZE]));
         }
+        // Free xattr block
+        let xattr_block = inode.inode.xattr_block();
+        if xattr_block != 0 {
+            // Deallocate the block
+            self.dealloc_block(inode, xattr_block)?;
+            // Clear the block content
+            self.write_block(&Block::new(xattr_block, [0; BLOCK_SIZE]));
+        }
         // Deallocate the inode
-        self.dealloc_inode(&inode)?;
+        self.dealloc_inode(inode)?;
         Ok(())
     }
 
@@ -234,7 +241,7 @@ impl Ext4 {
     }
 
     /// Free an inode
-    fn dealloc_inode(&self, inode_ref: &InodeRef) -> Result<()> {
+    fn dealloc_inode(&self, inode_ref: &mut InodeRef) -> Result<()> {
         let mut sb = self.read_super_block();
 
         // Calc block group id and index in block group
@@ -275,6 +282,10 @@ impl Ext4 {
         // Update superblock counters
         sb.set_free_inodes_count(sb.free_inodes_count() - 1);
         self.write_super_block(&sb);
+
+        // Clear inode content
+        inode_ref.inode = unsafe { mem::zeroed() };
+        self.write_inode_without_csum(inode_ref);
 
         Ok(())
     }
