@@ -280,7 +280,7 @@ impl Ext4 {
         self.write_block_group_with_csum(&mut bg);
 
         // Update superblock counters
-        sb.set_free_inodes_count(sb.free_inodes_count() - 1);
+        sb.set_free_inodes_count(sb.free_inodes_count() + 1);
         self.write_super_block(&sb);
 
         // Clear inode content
