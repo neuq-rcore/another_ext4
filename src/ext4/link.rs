@@ -14,52 +14,45 @@ impl Ext4 {
         self.dir_add_entry(parent, child, name)?;
 
         let child_link_count = child.inode.link_count();
-        if child.inode.is_dir() && child_link_count == 0 {
-            // Add '.' and '..' entries if child is a newly created directory
-            let child_self = child.clone();
-            self.dir_add_entry(child, &child_self, ".")?;
-            self.dir_add_entry(child, parent, "..")?;
+        if child.inode.is_dir() {
             // Link child/".."
+            self.dir_add_entry(child, parent, "..")?;
             parent.inode.set_link_count(parent.inode.link_count() + 1);
             self.write_inode_with_csum(parent);
-            // Link parent/child + child/"."
-            child.inode.set_link_count(child_link_count + 2);
-        } else {
-            // Link parent/child
-            child.inode.set_link_count(child_link_count + 1);
         }
+        // Link parent/child
+        child.inode.set_link_count(child_link_count + 1);
         self.write_inode_with_csum(child);
         Ok(())
     }
 
     /// Unlink a child inode from a parent directory.
-    /// Free the inode if link count is 0.
+    /// 
+    /// If `free` is true, the inode will be freed if it has no links.
     pub(super) fn unlink_inode(
         &self,
         parent: &mut InodeRef,
         child: &mut InodeRef,
         name: &str,
+        free: bool, 
     ) -> Result<()> {
         // Remove entry from parent directory
         self.dir_remove_entry(parent, name)?;
 
         let child_link_cnt = child.inode.link_count();
-        if child.inode.is_dir() && child_link_cnt <= 2 {
-            // Child is an empty directory
+        if child.inode.is_dir() {
+            // Child is a directory
             // Unlink "child/.."
+            self.dir_remove_entry(&child, "..")?;
             parent.inode.set_link_count(parent.inode.link_count() - 1);
             self.write_inode_with_csum(parent);
-            // Remove directory
-            self.free_inode(child)
-        } else if child_link_cnt <= 1 {
-            // Child is a file
-            // Remove file
-            self.free_inode(child)
-        } else {
-            // Not remove
-            child.inode.set_link_count(child_link_cnt - 1);
-            self.write_inode_with_csum(child);
-            Ok(())
         }
+        if free && ((child.inode.is_dir() && child_link_cnt <= 2) || child_link_cnt <= 1) {
+            // Remove file or directory
+            return self.free_inode(child);
+        }
+        child.inode.set_link_count(child_link_cnt - 1);
+        self.write_inode_with_csum(child);
+        Ok(())
     }
 }

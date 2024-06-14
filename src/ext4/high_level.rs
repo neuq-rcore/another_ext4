@@ -132,7 +132,7 @@ impl Ext4 {
             }
         }
         // Unlink the file
-        self.unlink_inode(&mut parent, &mut child, file_name)
+        self.unlink_inode(&mut parent, &mut child, file_name, true)
     }
 
     /// A helper function to split a path by '/'

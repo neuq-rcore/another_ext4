@@ -148,6 +148,10 @@ impl<T: 'static> Filesystem for StateExt4FuseFs<T> {
         _flags: i32,
         reply: ReplyCreate,
     ) {
+        // Check if name is already in use
+        if let Ok(_) = self.fs.lookup(parent as u32, name.to_str().unwrap()) {
+            return reply.error(ErrCode::EEXIST as i32);
+        }
         match self.fs.create(
             parent as u32,
             name.to_str().unwrap(),
@@ -238,6 +242,10 @@ impl<T: 'static> Filesystem for StateExt4FuseFs<T> {
         newname: &OsStr,
         reply: ReplyEntry,
     ) {
+        // Check if newname is already in use
+        if let Ok(_) = self.fs.lookup(newparent as u32, newname.to_str().unwrap()) {
+            return reply.error(ErrCode::EEXIST as i32);
+        }
         match self
             .fs
             .link(ino as u32, newparent as u32, newname.to_str().unwrap())
@@ -264,6 +272,13 @@ impl<T: 'static> Filesystem for StateExt4FuseFs<T> {
         _flags: u32,
         reply: ReplyEmpty,
     ) {
+        if parent == newparent && name == newname {
+            return reply.ok();
+        }
+        // Check if newname is already in use
+        if let Ok(_) = self.fs.lookup(newparent as u32, newname.to_str().unwrap()) {
+            return reply.error(ErrCode::EEXIST as i32);
+        }
         match self.fs.rename(
             parent as u32,
             name.to_str().unwrap(),
@@ -284,6 +299,10 @@ impl<T: 'static> Filesystem for StateExt4FuseFs<T> {
         _umask: u32,
         reply: ReplyEntry,
     ) {
+        // Check if name is already in use
+        if let Ok(_) = self.fs.lookup(parent as u32, name.to_str().unwrap()) {
+            return reply.error(ErrCode::EEXIST as i32);
+        }
         match self.fs.mkdir(
             parent as u32,
             name.to_str().unwrap(),

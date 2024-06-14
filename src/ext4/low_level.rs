@@ -112,8 +112,8 @@ impl Ext4 {
         Ok(())
     }
 
-    /// Create and open a file. This function will not check the existence
-    /// of the file. Call `lookup` to check beforehand.
+    /// Create a file. This function will not check the existence of
+    /// the file, call `lookup` to check beforehand.
     ///
     /// # Params
     ///
@@ -259,8 +259,8 @@ impl Ext4 {
         Ok(cursor)
     }
 
-    /// Create a hard link. This function will not check name conflict.
-    /// Call `lookup` to check beforehand.
+    /// Create a hard link. This function will not check name conflict,
+    /// call `lookup` to check beforehand.
     ///
     /// # Params
     ///
@@ -278,6 +278,10 @@ impl Ext4 {
             return_error!(ErrCode::ENOTDIR, "Inode {} is not a directory", parent.id);
         }
         let mut child = self.read_inode(child);
+        // Cannot link a directory
+        if child.inode.is_dir() {
+            return_error!(ErrCode::EISDIR, "Cannot link a directory");
+        }
         self.link_inode(&mut parent, &mut child, name)?;
         Ok(())
     }
@@ -293,19 +297,25 @@ impl Ext4 {
     ///
     /// * `ENOTDIR` - `parent` is not a directory
     /// * `ENOENT` - `name` does not exist in `parent`
+    /// * `EISDIR` - `parent/name` is a directory
     pub fn unlink(&self, parent: InodeId, name: &str) -> Result<()> {
         let mut parent = self.read_inode(parent);
         // Can only unlink from a directory
         if !parent.inode.is_dir() {
             return_error!(ErrCode::ENOTDIR, "Inode {} is not a directory", parent.id);
         }
+        // Cannot unlink directory
         let child_id = self.dir_find_entry(&parent, name)?.inode();
         let mut child = self.read_inode(child_id);
-        self.unlink_inode(&mut parent, &mut child, name)
+        if child.inode.is_dir() {
+            return_error!(ErrCode::EISDIR, "Cannot unlink a directory");
+        }
+        self.unlink_inode(&mut parent, &mut child, name, true)
     }
 
-    /// Move a file. This function will not check name conflict.
-    /// Call `lookup` to check beforehand.
+    /// Move a file. This function will not check name conflict,
+    /// call `lookup` to check beforehand. Caller should ensure
+    /// `parent/name` and `new_parent/new_name` are different.
     ///
     /// # Params
     ///
@@ -338,16 +348,15 @@ impl Ext4 {
                 new_parent.id
             );
         }
+        let child_entry = self.dir_find_entry(&parent, name)?;
+        let mut child = self.read_inode(child_entry.inode());
 
-        let child_id = self.dir_find_entry(&parent, name)?;
-        let mut child = self.read_inode(child_id.inode());
-
-        self.link_inode(&mut new_parent, &mut child, new_name)?;
-        self.unlink_inode(&mut parent, &mut child, name)
+        self.unlink_inode(&mut parent, &mut child, name, false)?;
+        self.link_inode(&mut new_parent, &mut child, new_name)
     }
 
-    /// Create a directory. This function will not check name conflict.
-    /// Call `lookup` to check beforehand.
+    /// Create a directory. This function will not check name conflict,
+    /// call `lookup` to check beforehand.
     ///
     /// # Params
     ///
@@ -372,6 +381,10 @@ impl Ext4 {
         // Create file/directory
         let mode = mode & InodeMode::PERM_MASK | InodeMode::DIRECTORY;
         let mut child = self.create_inode(mode)?;
+        // Add "." entry
+        let child_self = child.clone();
+        self.dir_add_entry(&mut child, &child_self, ".")?;
+        child.inode.set_link_count(1);
         // Link the new inode
         self.link_inode(&mut parent, &mut child, name)?;
         Ok(child.id)
@@ -452,7 +465,7 @@ impl Ext4 {
             return_error!(ErrCode::ENOTEMPTY, "Directory {} is not empty", child.id);
         }
         // Remove directory entry
-        self.unlink_inode(&mut parent, &mut child, name)
+        self.unlink_inode(&mut parent, &mut child, name, true)
     }
 
     /// Get extended attribute of a file.
@@ -486,8 +499,8 @@ impl Ext4 {
         }
     }
 
-    /// Set extended attribute of a file. This function will not check name conflict.
-    /// Call `getxattr` to check beforehand.
+    /// Set extended attribute of a file. This function will not check name conflict,
+    /// call `getxattr` to check beforehand.
     ///
     /// # Params
     ///
