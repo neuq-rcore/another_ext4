@@ -117,21 +117,27 @@ fn xattr_test(ext4: &mut Ext4) {
     let file = ext4
         .generic_create(ROOT_INO, "f2", file_mode)
         .expect("Create failed");
-    ext4.setxattr(file, "user.test1", "hello world".as_bytes())
+    ext4.setxattr(file, "user.testone", "hello world".as_bytes())
         .expect("setxattr failed");
-    ext4.setxattr(file, "user.test2", "world hello".as_bytes())
+    ext4.setxattr(file, "user.testtwo", "world hello".as_bytes())
         .expect("setxattr failed");
-    let value = ext4.getxattr(file, "user.test1").expect("getxattr failed");
-    assert_eq!(value, "hello world".as_bytes());
-    let value = ext4.getxattr(file, "user.test2").expect("getxattr failed");
-    assert_eq!(value, "world hello".as_bytes());
+
     let names = ext4.listxattr(file).expect("listxattr failed");
-    assert_eq!(names, vec!["user.test1", "user.test2"]);
-    ext4.removexattr(file, "user.test1").expect("removexattr failed");
-    ext4.getxattr(file, "user.test1")
+    assert_eq!(names, vec!["user.testone", "user.testtwo"]);
+    
+    let value = ext4.getxattr(file, "user.testone").expect("getxattr failed");
+    assert_eq!(value, "hello world".as_bytes());
+    let value = ext4.getxattr(file, "user.testtwo").expect("getxattr failed");
+    assert_eq!(value, "world hello".as_bytes());
+    
+    let names = ext4.listxattr(file).expect("listxattr failed");
+    assert_eq!(names, vec!["user.testone", "user.testtwo"]);
+    
+    ext4.removexattr(file, "user.testone").expect("removexattr failed");
+    ext4.getxattr(file, "user.testone")
         .expect_err("getxattr failed");
     let names = ext4.listxattr(file).expect("listxattr failed");
-    assert_eq!(names, vec!["user.test2"]);
+    assert_eq!(names, vec!["user.testtwo"]);
 }
 
 fn main() {
@@ -151,6 +157,7 @@ fn main() {
     println!("large read write test done");
     remove_file_test(&mut ext4);
     println!("remove file test done");
+    log::set_max_level(log::LevelFilter::Trace);
     xattr_test(&mut ext4);
     println!("xattr test done");
 }
