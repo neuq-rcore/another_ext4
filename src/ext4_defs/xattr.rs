@@ -153,17 +153,21 @@ impl XattrEntry {
 pub struct XattrBlock(Block);
 
 impl XattrBlock {
+    /// Wrap a data block as `XattrBlock`.
     pub fn new(block: Block) -> Self {
         XattrBlock(block)
     }
 
+    /// Get the wrapped block.
+    pub fn block(self) -> Block {
+        self.0
+    }
+
+    /// Initialize a xattr block, write a `XattrHeader` to the
+    /// beginning of the block.
     pub fn init(&mut self) {
         let header = XattrHeader::new();
         self.0.write_offset_as(0, &header);
-    }
-
-    pub fn block(self) -> Block {
-        self.0
     }
 
     /// Get a xattr by name, return the value.

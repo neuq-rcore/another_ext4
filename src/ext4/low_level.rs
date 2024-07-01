@@ -305,7 +305,7 @@ impl Ext4 {
             return_error!(ErrCode::ENOTDIR, "Inode {} is not a directory", parent.id);
         }
         // Cannot unlink directory
-        let child_id = self.dir_find_entry(&parent, name)?.inode();
+        let child_id = self.dir_find_entry(&parent, name)?;
         let mut child = self.read_inode(child_id);
         if child.inode.is_dir() {
             return_error!(ErrCode::EISDIR, "Cannot unlink a directory");
@@ -349,7 +349,7 @@ impl Ext4 {
             );
         }
         let child_entry = self.dir_find_entry(&parent, name)?;
-        let mut child = self.read_inode(child_entry.inode());
+        let mut child = self.read_inode(child_entry);
 
         self.unlink_inode(&mut parent, &mut child, name, false)?;
         self.link_inode(&mut new_parent, &mut child, new_name)
@@ -412,7 +412,7 @@ impl Ext4 {
             return_error!(ErrCode::ENOTDIR, "Inode {} is not a directory", parent.id);
         }
         self.dir_find_entry(&parent, name)
-            .map(|entry| entry.inode())
+            .map(|entry| entry)
     }
 
     /// List all directory entries in a directory.
@@ -434,7 +434,7 @@ impl Ext4 {
         if inode_ref.inode.file_type() != FileType::Directory {
             return_error!(ErrCode::ENOTDIR, "Inode {} is not a directory", inode);
         }
-        Ok(self.dir_get_all_entries(&inode_ref))
+        Ok(self.dir_list_entries(&inode_ref))
     }
 
     /// Remove an empty directory.
@@ -455,13 +455,13 @@ impl Ext4 {
         if !parent.inode.is_dir() {
             return_error!(ErrCode::ENOTDIR, "Inode {} is not a directory", parent.id);
         }
-        let mut child = self.read_inode(self.dir_find_entry(&parent, name)?.inode());
+        let mut child = self.read_inode(self.dir_find_entry(&parent, name)?);
         // Child must be a directory
         if !child.inode.is_dir() {
             return_error!(ErrCode::ENOTDIR, "Inode {} is not a directory", child.id);
         }
         // Child must be empty
-        if self.dir_get_all_entries(&child).len() > 2 {
+        if self.dir_list_entries(&child).len() > 2 {
             return_error!(ErrCode::ENOTEMPTY, "Directory {} is not empty", child.id);
         }
         // Remove directory entry

@@ -84,7 +84,7 @@ impl Ext4 {
             match self.dir_find_entry(&cur, &path) {
                 Ok(de) => {
                     // If the object exists, check the type
-                    cur = self.read_inode(de.inode());
+                    cur = self.read_inode(de);
                 }
                 Err(e) => {
                     if e.code() != ErrCode::ENOENT {
@@ -127,7 +127,7 @@ impl Ext4 {
         let mut child = self.read_inode(child_id);
         if child.inode.is_dir() {
             // Check if the directory is empty
-            if self.dir_get_all_entries(&child).len() > 2 {
+            if self.dir_list_entries(&child).len() > 2 {
                 return_error!(ErrCode::ENOTEMPTY, "Directory {} not empty", path);
             }
         }
