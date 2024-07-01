@@ -428,7 +428,7 @@ impl Ext4 {
     /// # Error
     ///
     /// `ENOTDIR` - `inode` is not a directory
-    pub fn list(&self, inode: InodeId) -> Result<Vec<DirEntry>> {
+    pub fn listdir(&self, inode: InodeId) -> Result<Vec<DirEntry>> {
         let inode_ref = self.read_inode(inode);
         // Can only list a directory
         if inode_ref.inode.file_type() != FileType::Directory {
@@ -559,5 +559,24 @@ impl Ext4 {
         } else {
             return_error!(ErrCode::ENODATA, "Xattr {} does not exist", name);
         }
+    }
+
+    /// List extended attributes of a file.
+    /// 
+    /// # Params
+    /// 
+    /// * `inode` - the inode of the file
+    /// 
+    /// # Returns
+    /// 
+    /// A list of extended attributes of the file.
+    pub fn listxattr(&self, inode: InodeId) -> Result<Vec<String>> {
+        let inode_ref = self.read_inode(inode);
+        let xattr_block_id = inode_ref.inode.xattr_block();
+        if xattr_block_id == 0 {
+            return Ok(Vec::new());
+        }
+        let xattr_block = XattrBlock::new(self.read_block(xattr_block_id));
+        Ok(xattr_block.list())
     }
 }

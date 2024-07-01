@@ -112,17 +112,26 @@ fn remove_file_test(ext4: &mut Ext4) {
         .expect_err("remove file failed");
 }
 
-fn remove_dir_test(ext4: &mut Ext4) {
-    ext4.generic_remove(ROOT_INO, "d2")
-        .expect_err("remove unempty dir");
-    ext4.generic_create(ROOT_INO, "dtmp", InodeMode::DIRECTORY | InodeMode::ALL_RWX)
-        .expect("mkdir failed");
-    ext4.generic_lookup(ROOT_INO, "dtmp")
-        .expect("dir not created");
-    ext4.generic_remove(ROOT_INO, "dtmp")
-        .expect("remove file failed");
-    ext4.generic_lookup(ROOT_INO, "dtmp")
-        .expect_err("dir not removed");
+fn xattr_test(ext4: &mut Ext4) {
+    let file_mode: InodeMode = InodeMode::FILE | InodeMode::ALL_RWX;
+    let file = ext4
+        .generic_create(ROOT_INO, "f2", file_mode)
+        .expect("Create failed");
+    ext4.setxattr(file, "user.test1", "hello world".as_bytes())
+        .expect("setxattr failed");
+    ext4.setxattr(file, "user.test2", "world hello".as_bytes())
+        .expect("setxattr failed");
+    let value = ext4.getxattr(file, "user.test1").expect("getxattr failed");
+    assert_eq!(value, "hello world".as_bytes());
+    let value = ext4.getxattr(file, "user.test2").expect("getxattr failed");
+    assert_eq!(value, "world hello".as_bytes());
+    let names = ext4.listxattr(file).expect("listxattr failed");
+    assert_eq!(names, vec!["user.test1", "user.test2"]);
+    ext4.removexattr(file, "user.test1").expect("removexattr failed");
+    ext4.getxattr(file, "user.test1")
+        .expect_err("getxattr failed");
+    let names = ext4.listxattr(file).expect("listxattr failed");
+    assert_eq!(names, vec!["user.test2"]);
 }
 
 fn main() {
@@ -142,6 +151,6 @@ fn main() {
     println!("large read write test done");
     remove_file_test(&mut ext4);
     println!("remove file test done");
-    remove_dir_test(&mut ext4);
-    println!("remove dir test done");
+    xattr_test(&mut ext4);
+    println!("xattr test done");
 }

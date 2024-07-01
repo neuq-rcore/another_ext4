@@ -130,6 +130,17 @@ impl XattrEntry {
         }
     }
 
+    /// Get the name of the xattr entry
+    pub fn name(&self) -> String {
+        let name = &self.name[..self.name_len as usize];
+        unsafe { String::from_utf8_unchecked(name.to_vec()) }
+    }
+
+    /// Compare the name of the xattr entry with a given name
+    pub fn compare_name(&self, name: &str) -> bool {
+        &self.name[..name.len()] == name.as_bytes()
+    }
+
     /// Get the required size to save a xattr entry, 4-byte aligned
     pub fn required_size(name_len: usize) -> usize {
         // u32 + u16 + u8 + Ext4DirEnInner + name -> align to 4
@@ -181,8 +192,7 @@ impl XattrBlock {
                 break;
             }
             let entry: XattrEntry = self.0.read_offset_as(entry_start);
-            // Compare name
-            if name.as_bytes() == &entry.name[..entry.name_len as usize] {
+            if entry.compare_name(name) {
                 return Some(
                     &self
                         .0
@@ -192,6 +202,23 @@ impl XattrBlock {
             entry_start += entry.used_size();
         }
         None
+    }
+
+    /// List all xattr names
+    pub fn list(&self) -> Vec<String> {
+        let mut entry_start = size_of::<XattrHeader>();
+        let mut names = Vec::new();
+        // Iterate over entry table
+        while entry_start < BLOCK_SIZE {
+            // Check `name_len`, 0 indicates the end of the entry table.
+            if self.0.data[entry_start] == 0 {
+                break;
+            }
+            let entry: XattrEntry = self.0.read_offset_as(entry_start);
+            names.push(entry.name());
+            entry_start += entry.used_size();
+        }
+        names
     }
 
     /// Insert a xattr entry into the block. Return true if success.
@@ -236,7 +263,7 @@ impl XattrBlock {
             }
             let entry: XattrEntry = self.0.read_offset_as(entry_start);
             // Compare name
-            if name.as_bytes() == &entry.name[..entry.name_len as usize] {
+            if entry.compare_name(name) {
                 break;
             }
             entry_start += entry.used_size();

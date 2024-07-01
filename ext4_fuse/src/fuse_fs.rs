@@ -280,7 +280,7 @@ impl<T: 'static> Filesystem for StateExt4FuseFs<T> {
             if let Ok(des) = self.fs.lookup(newparent as u32, newname.to_str().unwrap()) {
                 if self.fs.getattr(src).unwrap().ftype == Ext4FileType::Directory
                     && self.fs.getattr(des).unwrap().ftype == Ext4FileType::Directory
-                    && self.fs.list(des).unwrap().len() <= 2
+                    && self.fs.listdir(des).unwrap().len() <= 2
                 {
                     // Overwrite empty directory
                     if let Err(e) = self.fs.rmdir(newparent as u32, newname.to_str().unwrap()) {
@@ -348,7 +348,7 @@ impl<T: 'static> Filesystem for StateExt4FuseFs<T> {
         offset: i64,
         mut reply: ReplyDirectory,
     ) {
-        let entries = self.fs.list(ino as u32);
+        let entries = self.fs.listdir(ino as u32);
         match entries {
             Ok(entries) => {
                 let mut i = offset as usize;
@@ -358,7 +358,7 @@ impl<T: 'static> Filesystem for StateExt4FuseFs<T> {
                         ino,
                         i as i64 + 1,
                         translate_ftype(self.fs.getattr(entry.inode()).unwrap().ftype),
-                        entry.name().unwrap(),
+                        entry.name(),
                     ) {
                         break;
                     }
@@ -458,9 +458,15 @@ impl<T: 'static> Filesystem for StateExt4FuseFs<T> {
         let name = name.to_str().unwrap();
         match self.fs.getxattr(ino as u32, name) {
             Ok(value) => {
+                log::trace!(
+                    "Get xattr {} of inode {}: {:?}",
+                    name,
+                    ino,
+                    String::from_utf8_lossy(&value)
+                );
                 if size == 0 {
                     reply.size(value.len() as u32);
-                } else if value.len() == size as usize {
+                } else if value.len() <= size as usize {
                     reply.data(&value);
                 } else {
                     reply.error(ErrCode::ERANGE as i32);
@@ -495,6 +501,26 @@ impl<T: 'static> Filesystem for StateExt4FuseFs<T> {
         let name = name.to_str().unwrap();
         match self.fs.removexattr(ino as u32, name) {
             Ok(_) => reply.ok(),
+            Err(e) => reply.error(e.code() as i32),
+        }
+    }
+
+    fn listxattr(&mut self, _req: &Request<'_>, ino: u64, size: u32, reply: fuser::ReplyXattr) {
+        match self.fs.listxattr(ino as u32) {
+            Ok(names) => {
+                let mut buffer = Vec::new();
+                for name in names {
+                    buffer.extend_from_slice(name.as_bytes());
+                    buffer.push(0);
+                }
+                if size == 0 {
+                    reply.size(buffer.len() as u32);
+                } else if buffer.len() <= size as usize {
+                    reply.data(&buffer);
+                } else {
+                    reply.error(ErrCode::ERANGE as i32);
+                }
+            }
             Err(e) => reply.error(e.code() as i32),
         }
     }

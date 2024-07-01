@@ -5,7 +5,6 @@ use super::crc::*;
 use super::AsBytes;
 use super::FileType;
 use crate::constants::*;
-use crate::format_error;
 use crate::prelude::*;
 use crate::Block;
 
@@ -84,15 +83,11 @@ impl DirEntry {
     }
 
     /// Get the name of the directory entry
-    pub fn name(&self) -> Result<String> {
-        let name_len = self.name_len as usize;
-        let name = &self.name[..name_len];
-        String::from_utf8(name.to_vec()).map_err(|_| {
-            format_error!(
-                ErrCode::EINVAL,
-                "Invalid UTF-8 sequence in directory entry name"
-            )
-        })
+    pub fn name(&self) -> String {
+        let name = &self.name[..self.name_len as usize];
+        unsafe {
+            String::from_utf8_unchecked(name.to_vec())
+        }
     }
 
     /// Compare the name of the directory entry with a given name
