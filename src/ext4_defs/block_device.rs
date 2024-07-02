@@ -1,7 +1,6 @@
 use crate::constants::*;
 use crate::prelude::*;
 use core::any::Any;
-use core::fmt::Debug;
 
 /// Interface for serializing and deserializing objects to and from bytes.
 ///
@@ -24,7 +23,7 @@ where
     }
 }
 
-/// Common data block descriptor
+/// Common data block descriptor.
 pub struct Block {
     /// Physical block id
     pub id: PBlockId,
@@ -42,17 +41,17 @@ impl Default for Block {
 }
 
 impl Block {
-    /// Create new block with given physical block id and data
+    /// Create new block with given physical block id and data.
     pub fn new(block_id: PBlockId, data: [u8; BLOCK_SIZE]) -> Self {
         Self { id: block_id, data }
     }
 
-    /// Read `size` bytes from `offset` in block data
+    /// Read `size` bytes from `offset` in block data.
     pub fn read_offset(&self, offset: usize, size: usize) -> &[u8] {
         &self.data[offset..offset + size]
     }
 
-    /// Read bytes from `offset` in block data and interpret it as `T`
+    /// Read bytes from `offset` in block data and interpret it as `T`.
     pub fn read_offset_as<'a, T>(&self, offset: usize) -> T
     where
         T: AsBytes,
@@ -60,12 +59,12 @@ impl Block {
         T::from_bytes(&self.data[offset..])
     }
 
-    /// Write block data to `offset` with `size`
+    /// Write block data to `offset` with `size`.
     pub fn write_offset(&mut self, offset: usize, data: &[u8]) {
         self.data[offset..offset + data.len()].copy_from_slice(data);
     }
 
-    /// Transform `T` to bytes and write it to `offset`
+    /// Transform `T` to bytes and write it to `offset`.
     pub fn write_offset_as<T>(&mut self, offset: usize, value: &T)
     where
         T: AsBytes,
@@ -74,10 +73,10 @@ impl Block {
     }
 }
 
-/// Common interface for block devices
-pub trait BlockDevice: Send + Sync + Any + Debug {
-    /// Read a block from disk
+/// Common interface for block devices.
+pub trait BlockDevice: Send + Sync + Any {
+    /// Read a block from disk.
     fn read_block(&self, block_id: PBlockId) -> Block;
-    /// Write a block to disk
+    /// Write a block to disk.
     fn write_block(&self, block: &Block);
 }

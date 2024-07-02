@@ -105,6 +105,11 @@ impl DirEntry {
         self.inode = 0
     }
 
+    /// Get the dir entry's file type
+    pub fn file_type(&self) -> FileType {
+        self.file_type
+    }
+
     /// Set the dir entry's file type
     pub fn set_type(&mut self, file_type: FileType) {
         self.file_type = file_type;
