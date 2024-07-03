@@ -1,4 +1,4 @@
-use ext4_rs::{FileAttr as Ext4FileAttr, FileType as Ext4FileType, INODE_BLOCK_SIZE};
+use another_ext4::{FileAttr as Ext4FileAttr, FileType as Ext4FileType, INODE_BLOCK_SIZE};
 use fuser::{FileAttr, FileType, TimeOrNow};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 

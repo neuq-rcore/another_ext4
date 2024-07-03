@@ -1,6 +1,6 @@
-use ext4_rs::{Block, BlockDevice, BLOCK_SIZE};
+use another_ext4::{Block, BlockDevice, BLOCK_SIZE};
 use std::fs::OpenOptions;
-use std::io::Read;
+use std::io::{Read, Write};
 use std::sync::Mutex;
 
 /// A block device supporting state save and restore
@@ -24,6 +24,29 @@ impl BlockMem {
             blocks.push([0; BLOCK_SIZE]);
         }
         Self(Mutex::new(blocks))
+    }
+    /// Load a disk image from a file
+    pub fn load(path: &str) -> Self {
+        let mut file = OpenOptions::new().read(true).open(path).unwrap();
+        let mut blocks = Vec::new();
+        let mut buf = [0; BLOCK_SIZE];
+        while file.read(&mut buf).unwrap() > 0 {
+            blocks.push(buf);
+        }
+        Self(Mutex::new(blocks))
+    }
+    /// Save the disk image to a file
+    pub fn save(&self, path: &str) {
+        let mut file = OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .open(path)
+            .unwrap();
+        let blocks = self.0.lock().unwrap();
+        for block in blocks.iter() {
+            file.write_all(block).unwrap();
+        }
     }
     /// Make an ext4 filesystem on the block device
     pub fn mkfs(&self) {

@@ -17,13 +17,13 @@
 
 use super::common::{sys_time2second, time_or_now2second, translate_attr, translate_ftype};
 use crate::block_dev::StateBlockDevice;
-use ext4_rs::{ErrCode, Ext4, Ext4Error, FileType as Ext4FileType, InodeMode};
+use another_ext4::{ErrCode, Ext4, Ext4Error, FileType as Ext4FileType, InodeMode};
 use fuser::{
     FileAttr, FileType, Filesystem, ReplyAttr, ReplyCreate, ReplyData, ReplyDirectory, ReplyEmpty,
     ReplyEntry, ReplyOpen, ReplyWrite, Request,
 };
 use std::collections::HashMap;
-use std::ffi::{c_int, OsStr};
+use std::ffi::OsStr;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -47,9 +47,16 @@ impl<T: 'static> StateExt4FuseFs<T> {
     const CHECKPOINT_IOC: u32 = 1;
     const RESTORE_IOC: u32 = 2;
 
-    pub fn new(block_dev: Arc<dyn StateBlockDevice<T>>) -> Self {
+    /// Create a file system on a block device
+    /// 
+    /// `init` - If true, initialize the filesystem
+    pub fn new(block_dev: Arc<dyn StateBlockDevice<T>>, init: bool) -> Self {
+        let mut fs = Ext4::load(block_dev.clone()).expect("Failed to load ext4 filesystem");
+        if init {
+            fs.init().expect("Failed to init ext4 filesystem");
+        }
         Self {
-            fs: Ext4::load(block_dev.clone()).unwrap(),
+            fs,
             block_dev,
             states: HashMap::new(),
             next_fid: 0,
@@ -86,10 +93,6 @@ impl<T: 'static> StateExt4FuseFs<T> {
 }
 
 impl<T: 'static> Filesystem for StateExt4FuseFs<T> {
-    fn init(&mut self, _req: &Request<'_>, _config: &mut fuser::KernelConfig) -> Result<(), c_int> {
-        self.fs.init().map_err(|e| e.code() as i32)
-    }
-
     fn lookup(&mut self, _req: &Request<'_>, parent: u64, name: &OsStr, reply: ReplyEntry) {
         match self.fs.lookup(parent as u32, name.to_str().unwrap()) {
             Ok(inode_id) => reply.entry(&get_ttl(), &self.get_attr(inode_id).unwrap(), 0),
