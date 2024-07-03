@@ -1,4 +1,4 @@
-use ext4_rs::{Block, BlockDevice, BLOCK_SIZE};
+use another_ext4::{Block, BlockDevice, BLOCK_SIZE};
 use std::fs::{File, OpenOptions};
 use std::io::{Read, Seek, SeekFrom, Write};
 

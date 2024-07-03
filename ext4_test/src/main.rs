@@ -1,5 +1,5 @@
 use block_file::BlockFile;
-use ext4_rs::{Ext4, InodeMode, OpenFlags, EXT4_ROOT_INO};
+use another_ext4::{Ext4, InodeMode, OpenFlags, EXT4_ROOT_INO};
 use simple_logger::SimpleLogger;
 use std::sync::Arc;
 
@@ -29,6 +29,14 @@ fn open_ext4() -> Ext4 {
 
 fn mkdir_test(ext4: &mut Ext4) {
     let dir_mode: InodeMode = InodeMode::DIRECTORY | InodeMode::ALL_RWX;
+    for i in 0..1000 {
+        ext4.generic_create(ROOT_INO, &format!("d{}", i), dir_mode)
+            .expect("mkdir failed");
+    }
+    for i in 0..1000 {
+        ext4.generic_lookup(ROOT_INO, &format!("d{}", i))
+            .expect("lookup failed");
+    }
     ext4.generic_create(ROOT_INO, "d1", dir_mode)
         .expect("mkdir failed");
     ext4.generic_create(ROOT_INO, "d1/d2", dir_mode)

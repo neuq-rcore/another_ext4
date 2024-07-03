@@ -4,6 +4,6 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-ext4_rs = { path = ".." }
+another_ext4 = { path = ".." }
 simple_logger = "4.3"
 log = "0.4"
