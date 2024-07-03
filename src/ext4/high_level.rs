@@ -25,6 +25,7 @@ impl Ext4 {
     ///
     /// `Ok(inode)` - Inode id of the object
     pub fn generic_lookup(&self, root: InodeId, path: &str) -> Result<InodeId> {
+        trace!("generic_lookup({}, {})", root, path);
         // Search from the given parent inode
         let mut cur = root;
         let search_path = Self::split_path(path);
@@ -137,7 +138,7 @@ impl Ext4 {
 
     /// A helper function to split a path by '/'
     fn split_path(path: &str) -> Vec<String> {
-        let _ = path.trim_start_matches("/");
+        let path = path.trim_start_matches("/");
         if path.is_empty() {
             return vec![]; // root
         }
