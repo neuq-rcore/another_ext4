@@ -15,8 +15,9 @@
 //! For all other block groups, there is no padding.
 
 mod bitmap;
-mod block_device;
+mod block;
 mod block_group;
+mod cache;
 mod crc;
 mod dir;
 mod extent;
@@ -27,8 +28,9 @@ mod super_block;
 mod xattr;
 
 pub use bitmap::*;
-pub use block_device::*;
+pub use block::*;
 pub use block_group::*;
+pub use cache::*;
 pub use dir::*;
 pub use extent::*;
 pub use file::*;

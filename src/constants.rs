@@ -36,3 +36,9 @@ pub const SB_GOOD_INODE_SIZE: usize = 256;
 /// The value of super block `desc_size` field.
 /// We implement the 64-bit block group descriptor for simplicity.
 pub const SB_GOOD_DESC_SIZE: usize = 64;
+
+/// The size of the block cache (cache set number).
+pub const CACHE_SIZE: usize = 4;
+
+/// Cache associativity.
+pub const CACHE_ASSOC: usize = 4;

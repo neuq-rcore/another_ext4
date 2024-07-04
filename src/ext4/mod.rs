@@ -13,7 +13,7 @@ mod low_level;
 mod rw;
 
 pub struct Ext4 {
-    block_device: Arc<dyn BlockDevice>,
+    block_cache: BlockCache,
 }
 
 impl Ext4 {
@@ -41,7 +41,9 @@ impl Ext4 {
             );
         }
         // Create Ext4 instance
-        Ok(Self { block_device })
+        Ok(Self {
+            block_cache: BlockCache::new(block_device),
+        })
     }
     /// Initializes the root directory.
     pub fn init(&mut self) -> Result<()> {

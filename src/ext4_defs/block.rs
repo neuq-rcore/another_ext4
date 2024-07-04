@@ -24,6 +24,7 @@ where
 }
 
 /// Common data block descriptor.
+#[derive(Debug, Clone, Copy)]
 pub struct Block {
     /// Physical block id
     pub id: PBlockId,

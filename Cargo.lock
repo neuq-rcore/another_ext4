@@ -3,12 +3,158 @@
 version = 3
 
 [[package]]
+name = "aarch64-cpu"
+version = "9.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ac42a04a61c19fc8196dd728022a784baecc5d63d7e256c01ad1b3fbfab26287"
+dependencies = [
+ "tock-registers",
+]
+
+[[package]]
 name = "another_ext4"
 version = "0.1.0"
 dependencies = [
- "bitflags",
+ "axsync",
+ "bitflags 2.5.0",
  "log",
 ]
+
+[[package]]
+name = "arm_gic"
+version = "0.1.0"
+source = "git+https://github.com/Starry-OS/arm_gic.git#9aedb126ed0b059ee4e69e032c5e41b593ed10f0"
+dependencies = [
+ "aarch64-cpu",
+ "bitflags 2.5.0",
+ "cfg-if",
+ "tock-registers",
+]
+
+[[package]]
+name = "arm_pl011"
+version = "0.1.0"
+source = "git+https://github.com/Starry-OS/arm_pl011.git#cba8ce63e6e2248829ae340219e90e6df43cda48"
+dependencies = [
+ "tock-registers",
+]
+
+[[package]]
+name = "autocfg"
+version = "1.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0c4b4d0bd25bd0b74681c0ad21497610ce1b7c91b1022cd21c80c6fbdd9476b0"
+
+[[package]]
+name = "axconfig"
+version = "0.1.0"
+source = "git+https://github.com/Starry-OS/axconfig.git#80213038e457bb03e4ac250351d38f58c30debc8"
+dependencies = [
+ "serde",
+ "toml_edit",
+]
+
+[[package]]
+name = "axhal"
+version = "0.1.0"
+source = "git+https://github.com/Starry-OS/axhal.git#5ac7c72e7a1d2de9219c1fda5a929c90cda59460"
+dependencies = [
+ "aarch64-cpu",
+ "arm_gic",
+ "arm_pl011",
+ "axconfig",
+ "axlog",
+ "bitflags 2.5.0",
+ "cfg-if",
+ "crate_interface",
+ "dw_apb_uart",
+ "either",
+ "handler_table",
+ "kernel_guard",
+ "lazy_init",
+ "log",
+ "memory_addr",
+ "of",
+ "page_table_entry",
+ "percpu",
+ "ratio",
+ "raw-cpuid 11.0.2",
+ "riscv",
+ "sbi-rt",
+ "spinlock",
+ "static_assertions",
+ "taskctx",
+ "tock-registers",
+ "x2apic",
+ "x86",
+ "x86_64",
+]
+
+[[package]]
+name = "axlog"
+version = "0.1.0"
+source = "git+https://github.com/Starry-OS/axlog.git#5b28a4c6ae14342c725722ef62311ecc0480699c"
+dependencies = [
+ "cfg-if",
+ "crate_interface",
+ "log",
+ "spinlock",
+]
+
+[[package]]
+name = "axsignal"
+version = "0.1.0"
+source = "git+https://github.com/Starry-OS/axsignal.git#f2e2c4bdea9d903229bbbe7bc93c34cf9a376249"
+dependencies = [
+ "axhal",
+ "bitflags 2.5.0",
+ "cfg-if",
+ "numeric-enum-macro",
+]
+
+[[package]]
+name = "axsync"
+version = "0.1.0"
+source = "git+https://github.com/Starry-OS/axsync.git#70651a7c8e918e6f6aced3014acfd16f209aa4c0"
+dependencies = [
+ "axhal",
+ "axtask",
+ "cfg-if",
+ "spinlock",
+]
+
+[[package]]
+name = "axtask"
+version = "0.1.0"
+source = "git+https://github.com/Starry-OS/axtask.git#f8d203f3b99699b64562870cf087a142c3aaec8b"
+dependencies = [
+ "axhal",
+ "axlog",
+ "axsignal",
+ "cfg-if",
+ "linked_list",
+ "log",
+ "numeric-enum-macro",
+ "taskctx",
+]
+
+[[package]]
+name = "bit"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2b645c5c09a7d4035949cfce1a915785aaad6f17800c35fda8a8c311c491f284"
+
+[[package]]
+name = "bit_field"
+version = "0.10.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "dc827186963e592360843fb5ba4b973e145841266c1357f7180c43526f2e5b61"
+
+[[package]]
+name = "bitflags"
+version = "1.3.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bef38d45163c2f1dde094a7dfd33ccf595c92905c8f8f4fdc18d06fb1037718a"
 
 [[package]]
 name = "bitflags"
@@ -17,7 +163,440 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cf4b9d6a944f767f8e5e0db018570623c85f3d925ac718db4e06d0187adb21c1"
 
 [[package]]
+name = "cfg-if"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "baf1de4339761588bc0619e3cbc0120ee582ebb74b53b4efbf79117bd2da40fd"
+
+[[package]]
+name = "crate_interface"
+version = "0.1.1"
+source = "git+https://github.com/Starry-OS/crate_interface.git#d27dd9608dbf04b3138cf4386c19f939352b50b0"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
+]
+
+[[package]]
+name = "critical-section"
+version = "1.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7059fff8937831a9ae6f0fe4d658ffabf58f2ca96aa9dec1c889f936f705f216"
+
+[[package]]
+name = "dw_apb_uart"
+version = "0.1.0"
+source = "git+https://github.com/Starry-OS/dw_apb_uart.git#15d6fb0fe127794598565f2a1188c9dc864ec110"
+dependencies = [
+ "tock-registers",
+]
+
+[[package]]
+name = "either"
+version = "1.13.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "60b1af1c220855b6ceac025d3f6ecdd2b7c4894bfe9cd9bda4fbb4bc7c0d4cf0"
+
+[[package]]
+name = "embedded-hal"
+version = "0.2.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "35949884794ad573cf46071e41c9b60efb0cb311e3ca01f7af807af1debc66ff"
+dependencies = [
+ "nb 0.1.3",
+ "void",
+]
+
+[[package]]
+name = "equivalent"
+version = "1.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5443807d6dff69373d433ab9ef5378ad8df50ca6298caf15de6e52e24aaf54d5"
+
+[[package]]
+name = "fdt"
+version = "0.1.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "784a4df722dc6267a04af36895398f59d21d07dce47232adf31ec0ff2fa45e67"
+
+[[package]]
+name = "handler_table"
+version = "0.1.0"
+source = "git+https://github.com/Starry-OS/handler_table.git#d6495e7d835cbc999874f0ecf466ee1211447a79"
+
+[[package]]
+name = "hashbrown"
+version = "0.14.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e5274423e17b7c9fc20b6e7e208532f9b19825d82dfd615708b70edd83df41f1"
+
+[[package]]
+name = "indexmap"
+version = "2.2.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "168fb715dda47215e360912c096649d23d58bf392ac62f73919e831745e40f26"
+dependencies = [
+ "equivalent",
+ "hashbrown",
+]
+
+[[package]]
+name = "kernel_guard"
+version = "0.1.0"
+source = "git+https://github.com/Starry-OS/kernel_guard.git#72e006721a017db12ce7731fe30f56a83f330216"
+dependencies = [
+ "cfg-if",
+ "taskctx",
+]
+
+[[package]]
+name = "lazy_init"
+version = "0.1.0"
+source = "git+https://github.com/Starry-OS/lazy_init.git#d0e87c05b715063cc517de50ad5da15b13281def"
+
+[[package]]
+name = "lazy_static"
+version = "1.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bbd2bcb4c963f2ddae06a2efc7e9f3591312473c50c6685e1f298068316e66fe"
+dependencies = [
+ "spin",
+]
+
+[[package]]
+name = "linked_list"
+version = "0.1.0"
+source = "git+https://github.com/Starry-OS/linked_list.git#01ec54f275fda4ece9741f10d281550c077c0312"
+
+[[package]]
+name = "lock_api"
+version = "0.4.12"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "07af8b9cdd281b7915f413fa73f29ebd5d55d0d3f0155584dade1ff18cea1b17"
+dependencies = [
+ "autocfg",
+ "scopeguard",
+]
+
+[[package]]
 name = "log"
 version = "0.4.21"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "90ed8c1e510134f979dbc4f070f87d4313098b704861a105fe34231c70a3901c"
+
+[[package]]
+name = "memchr"
+version = "2.7.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "78ca9ab1a0babb1e7d5695e3530886289c18cf2f87ec19a575a0abdce112e3a3"
+
+[[package]]
+name = "memory_addr"
+version = "0.1.0"
+source = "git+https://github.com/Starry-OS/memory_addr.git#a5be547a3109f114994d005b893f9b19c2616709"
+
+[[package]]
+name = "nb"
+version = "0.1.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "801d31da0513b6ec5214e9bf433a77966320625a37860f910be265be6e18d06f"
+dependencies = [
+ "nb 1.1.0",
+]
+
+[[package]]
+name = "nb"
+version = "1.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8d5439c4ad607c3c23abf66de8c8bf57ba8adcd1f129e699851a6e43935d339d"
+
+[[package]]
+name = "numeric-enum-macro"
+version = "0.2.0"
+source = "git+https://github.com/mexus/numeric-enum-macro#20aef288b2ecd2381ab6627c2a6c9e0436d8c8ff"
+
+[[package]]
+name = "of"
+version = "0.1.0"
+source = "git+https://github.com/Starry-OS/of.git#a929cf979d9f3dce1547c7ea534bd626fd2f2eda"
+dependencies = [
+ "fdt",
+ "lazy_static",
+]
+
+[[package]]
+name = "page_table_entry"
+version = "0.1.0"
+source = "git+https://github.com/Starry-OS/page_table_entry.git#b3d8a577c29d19813fbc8c587d86557495099ae3"
+dependencies = [
+ "aarch64-cpu",
+ "bitflags 2.5.0",
+ "memory_addr",
+ "x86_64",
+]
+
+[[package]]
+name = "paste"
+version = "1.0.15"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "57c0d7b74b563b49d38dae00a0c37d4d6de9b432382b2892f0574ddcae73fd0a"
+
+[[package]]
+name = "percpu"
+version = "0.1.0"
+source = "git+https://github.com/Starry-OS/percpu.git#85e6d8a74f19ac54004e64d42cda07d14042e3ee"
+dependencies = [
+ "cfg-if",
+ "percpu_macros",
+ "spin",
+ "x86",
+]
+
+[[package]]
+name = "percpu_macros"
+version = "0.1.0"
+source = "git+https://github.com/Starry-OS/percpu_macros.git#b785b814c5489ac7043d80ea4b5a735b23ec2321"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
+]
+
+[[package]]
+name = "proc-macro2"
+version = "1.0.86"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5e719e8df665df0d1c8fbfd238015744736151d4445ec0836b8e628aae103b77"
+dependencies = [
+ "unicode-ident",
+]
+
+[[package]]
+name = "quote"
+version = "1.0.36"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0fa76aaf39101c457836aec0ce2316dbdc3ab723cdda1c6bd4e6ad4208acaca7"
+dependencies = [
+ "proc-macro2",
+]
+
+[[package]]
+name = "ratio"
+version = "0.1.0"
+source = "git+https://github.com/Starry-OS/ratio.git#0c8da4c37e695a0052563f0d30909c9f29b5b572"
+
+[[package]]
+name = "raw-cpuid"
+version = "10.7.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6c297679cb867470fa8c9f67dbba74a78d78e3e98d7cf2b08d6d71540f797332"
+dependencies = [
+ "bitflags 1.3.2",
+]
+
+[[package]]
+name = "raw-cpuid"
+version = "11.0.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e29830cbb1290e404f24c73af91c5d8d631ce7e128691e9477556b540cd01ecd"
+dependencies = [
+ "bitflags 2.5.0",
+]
+
+[[package]]
+name = "riscv"
+version = "0.10.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "aa3145d2fae3778b1e31ec2e827b228bdc6abd9b74bb5705ba46dcb82069bc4f"
+dependencies = [
+ "bit_field",
+ "critical-section",
+ "embedded-hal",
+]
+
+[[package]]
+name = "rustversion"
+version = "1.0.17"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "955d28af4278de8121b7ebeb796b6a45735dc01436d898801014aced2773a3d6"
+
+[[package]]
+name = "sbi-rt"
+version = "0.0.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8c113c53291db8ac141e01f43224ed488b8d6001ab66737b82e04695a43a42b7"
+dependencies = [
+ "sbi-spec",
+]
+
+[[package]]
+name = "sbi-spec"
+version = "0.0.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6d4027cf9bb591a9fd0fc0e283be6165c5abe96cb73e9f0e24738c227f425377"
+dependencies = [
+ "static_assertions",
+]
+
+[[package]]
+name = "scopeguard"
+version = "1.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "94143f37725109f92c262ed2cf5e59bce7498c01bcc1502d7b9afe439a4e9f49"
+
+[[package]]
+name = "serde"
+version = "1.0.203"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7253ab4de971e72fb7be983802300c30b5a7f0c2e56fab8abfc6a214307c0094"
+dependencies = [
+ "serde_derive",
+]
+
+[[package]]
+name = "serde_derive"
+version = "1.0.203"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "500cbc0ebeb6f46627f50f3f5811ccf6bf00643be300b4c3eabc0ef55dc5b5ba"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
+]
+
+[[package]]
+name = "spin"
+version = "0.9.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6980e8d7511241f8acf4aebddbb1ff938df5eebe98691418c4468d0b72a96a67"
+dependencies = [
+ "lock_api",
+]
+
+[[package]]
+name = "spinlock"
+version = "0.1.0"
+source = "git+https://github.com/Starry-OS/spinlock.git#0149e52d3e4f21ea7bf9bb85f6fe7fc3702d4f1f"
+dependencies = [
+ "cfg-if",
+ "kernel_guard",
+]
+
+[[package]]
+name = "static_assertions"
+version = "1.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a2eb9349b6444b326872e140eb1cf5e7c522154d69e7a0ffb0fb81c06b37543f"
+
+[[package]]
+name = "syn"
+version = "2.0.68"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "901fa70d88b9d6c98022e23b4136f9f3e54e4662c3bc1bd1d84a42a9a0f0c1e9"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "unicode-ident",
+]
+
+[[package]]
+name = "taskctx"
+version = "0.1.0"
+source = "git+https://github.com/Starry-OS/taskctx.git#86561d9659f294328350d0235e8f5d285fd6e766"
+dependencies = [
+ "aarch64-cpu",
+ "cfg-if",
+ "log",
+ "memory_addr",
+ "numeric-enum-macro",
+ "static_assertions",
+ "tock-registers",
+ "x86",
+]
+
+[[package]]
+name = "tock-registers"
+version = "0.8.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "696941a0aee7e276a165a978b37918fd5d22c55c3d6bda197813070ca9c0f21c"
+
+[[package]]
+name = "toml_datetime"
+version = "0.6.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4badfd56924ae69bcc9039335b2e017639ce3f9b001c393c1b2d1ef846ce2cbf"
+
+[[package]]
+name = "toml_edit"
+version = "0.19.15"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1b5bb770da30e5cbfde35a2d7b9b8a2c4b8ef89548a7a6aeab5c9a576e3e7421"
+dependencies = [
+ "indexmap",
+ "toml_datetime",
+ "winnow",
+]
+
+[[package]]
+name = "unicode-ident"
+version = "1.0.12"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3354b9ac3fae1ff6755cb6db53683adb661634f67557942dea4facebec0fee4b"
+
+[[package]]
+name = "void"
+version = "1.0.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6a02e4885ed3bc0f2de90ea6dd45ebcbb66dacffe03547fadbb0eeae2770887d"
+
+[[package]]
+name = "volatile"
+version = "0.4.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "442887c63f2c839b346c192d047a7c87e73d0689c9157b00b53dcc27dd5ea793"
+
+[[package]]
+name = "winnow"
+version = "0.5.40"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f593a95398737aeed53e489c785df13f3618e41dbcd6718c6addbf1395aa6876"
+dependencies = [
+ "memchr",
+]
+
+[[package]]
+name = "x2apic"
+version = "0.4.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cbcd582541cbb8ef1dfc24a3c849a64ff074b1b512af723ad90056558d424602"
+dependencies = [
+ "bit",
+ "bitflags 1.3.2",
+ "paste",
+ "raw-cpuid 10.7.0",
+ "x86_64",
+]
+
+[[package]]
+name = "x86"
+version = "0.52.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2781db97787217ad2a2845c396a5efe286f87467a5810836db6d74926e94a385"
+dependencies = [
+ "bit_field",
+ "bitflags 1.3.2",
+ "raw-cpuid 10.7.0",
+]
+
+[[package]]
+name = "x86_64"
+version = "0.14.12"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "96cb6fd45bfeab6a5055c5bffdb08768bd0c069f1d946debe585bbb380a7c062"
+dependencies = [
+ "bit_field",
+ "bitflags 2.5.0",
+ "rustversion",
+ "volatile",
+]
