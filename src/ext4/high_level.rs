@@ -80,7 +80,7 @@ impl Ext4 {
         // Search recursively
         for (i, path) in search_path.iter().enumerate() {
             if !cur.inode.is_dir() {
-                return_error!(ErrCode::ENOTDIR, "Parent directory is not a directory");
+                return_error!(ErrCode::ENOTDIR, "Parent {} is not a directory", cur.id);
             }
             match self.dir_find_entry(&cur, &path) {
                 Ok(de) => {

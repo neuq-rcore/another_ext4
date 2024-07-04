@@ -15,7 +15,7 @@ pub const NAME_MAX: usize = 255;
 pub const SYMLINKS_MAX: usize = 40;
 
 /// The inode number of root inode
-pub const EXT4_ROOT_INO: InodeId = 1;
+pub const EXT4_ROOT_INO: InodeId = 2;
 
 /// The base offset of the super block
 pub const BASE_OFFSET: usize = 1024;
@@ -24,7 +24,7 @@ pub const BASE_OFFSET: usize = 1024;
 pub const BLOCK_SIZE: usize = 4096;
 
 /// For simplicity define this the same as block size
-pub const INODE_BLOCK_SIZE: usize = 4096;
+pub const INODE_BLOCK_SIZE: usize = 512;
 
 /// CRC32 initial value
 pub const CRC32_INIT: u32 = 0xFFFFFFFF;

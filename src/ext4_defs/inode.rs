@@ -124,10 +124,7 @@ pub struct Inode {
     gid: u16,
     /// Hard link count.
     link_count: u16,
-    /// Lower 32-bits of "block" count.
-    /// Note: this field is different from ext4 inode by now.
-    /// Ext4 defines this as the count of 512-byte blocks.
-    /// To simplify, we define this as the count of 4096-byte blocks.
+    /// Lower 32-bits of "512-byte block" count.
     block_count: u32,
     /// Inode flags.
     flags: u32,
@@ -283,13 +280,29 @@ impl Inode {
         self.crtime = crtime;
     }
 
+    /// Get the number of 512-byte blocks (`INODE_BLOCK_SIZE`) used by the inode.
+    ///
+    /// WARN: This is different from filesystem block (`BLOCK_SIZE`)!
     pub fn block_count(&self) -> u64 {
         self.block_count as u64 | ((self.osd2.l_blocks_hi as u64) << 32)
     }
 
+    /// Get the number of filesystem blocks (`BLOCK_SIZE`) used by the inode.
+    pub fn fs_block_count(&self) -> u64 {
+        self.block_count() * INODE_BLOCK_SIZE as u64 / BLOCK_SIZE as u64
+    }
+
+    /// Set the number of 512-byte blocks (`INODE_BLOCK_SIZE`) used by the inode.
+    ///
+    /// WARN: This is different from filesystem block (`BLOCK_SIZE`)!
     pub fn set_block_count(&mut self, cnt: u64) {
         self.block_count = cnt as u32;
         self.osd2.l_blocks_hi = (cnt >> 32) as u16;
+    }
+
+    /// Set the number of filesystem blocks (`BLOCK_SIZE`) used by the inode.
+    pub fn set_fs_block_count(&mut self, cnt: u64) {
+        self.set_block_count(cnt * BLOCK_SIZE as u64 / INODE_BLOCK_SIZE as u64);
     }
 
     pub fn generation(&self) -> u32 {

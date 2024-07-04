@@ -91,11 +91,11 @@ impl Ext4 {
     /// newly created block.
     pub(super) fn inode_append_block(&self, inode: &mut InodeRef) -> Result<(LBlockId, PBlockId)> {
         // The new logical block id
-        let iblock = inode.inode.block_count() as LBlockId;
+        let iblock = inode.inode.fs_block_count() as LBlockId;
         // Check the extent tree to get the physical block id
         let fblock = self.extent_query_or_create(inode, iblock, 1)?;
         // Update block count
-        inode.inode.set_block_count(inode.inode.block_count() + 1);
+        inode.inode.set_fs_block_count(iblock as u64 + 1);
         self.write_inode_without_csum(inode);
 
         Ok((iblock, fblock))

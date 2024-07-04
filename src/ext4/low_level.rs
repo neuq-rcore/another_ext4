@@ -231,7 +231,7 @@ impl Ext4 {
         let start_iblock = (offset / BLOCK_SIZE) as LBlockId;
         let end_iblock = ((offset + write_size) / BLOCK_SIZE) as LBlockId;
         // Append enough block for writing
-        let append_block_count = end_iblock as i64 + 1 - file.inode.block_count() as i64;
+        let append_block_count = end_iblock as i64 + 1 - file.inode.fs_block_count() as i64;
         for _ in 0..append_block_count {
             self.inode_append_block(&mut file)?;
         }
