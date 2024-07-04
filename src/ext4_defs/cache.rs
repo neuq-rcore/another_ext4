@@ -1,7 +1,10 @@
+#![cfg(feature = "block_cache")]
+
 use crate::constants::*;
 use crate::prelude::*;
 use crate::Block;
 use crate::BlockDevice;
+use axsync::Mutex;
 
 /// Write-back cache slot.
 #[derive(Debug, Clone, Copy, Default)]
@@ -41,13 +44,13 @@ impl CacheSet {
         set
     }
 
-    /// Link LRU list.
+    /// Link 2 LRU list nodes.
     fn link(&mut self, prev: u8, cur: u8) {
         self.slots[prev as usize].next = cur;
         self.slots[cur as usize].prev = prev;
     }
 
-    /// Access a block in the cache set
+    /// Access a block in the cache set.
     fn access(&mut self, block_id: PBlockId) -> usize {
         // Check if there is a slot allocated for the block
         let slot = self
@@ -141,6 +144,33 @@ impl BlockCache {
             slot.block = block.clone();
             slot.valid = true;
             slot.dirty = true;
+        }
+    }
+
+    /// Flush a block to disk.
+    #[allow(unused)]
+    pub fn flush(&self, block_id: PBlockId) {
+        let mut cache = self.cache.lock();
+        let set_id = block_id as usize % CACHE_SIZE;
+        let slot_id = cache[set_id].access(block_id) as usize;
+        let slot = &mut cache[set_id].slots[slot_id];
+        if slot.valid && slot.dirty {
+            self.block_dev.write_block(&slot.block);
+            slot.dirty = false;
+        }
+    }
+
+    /// Flush all blocks to disk.
+    pub fn flush_all(&self) {
+        let mut cache = self.cache.lock();
+        for set in cache.iter_mut() {
+            for slot in set.slots.iter_mut() {
+                if slot.valid && slot.dirty {
+                    info!("Flushing block {} to disk", slot.block.id);
+                    self.block_dev.write_block(&slot.block);
+                    slot.dirty = false;
+                }
+            }
         }
     }
 }

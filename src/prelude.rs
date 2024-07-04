@@ -23,7 +23,6 @@ pub(crate) use core::ffi::CStr;
 pub(crate) use core::fmt::Debug;
 pub(crate) use core::mem::{self, size_of};
 pub(crate) use core::ptr;
-pub(crate) use axsync::Mutex;
 
 pub(crate) use log::{debug, info, trace, warn};
 

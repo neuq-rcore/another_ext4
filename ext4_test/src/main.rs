@@ -165,7 +165,6 @@ fn main() {
     println!("large read write test done");
     remove_file_test(&mut ext4);
     println!("remove file test done");
-    log::set_max_level(log::LevelFilter::Trace);
     xattr_test(&mut ext4);
     println!("xattr test done");
 }

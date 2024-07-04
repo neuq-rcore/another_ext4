@@ -17,7 +17,6 @@
 mod bitmap;
 mod block;
 mod block_group;
-mod cache;
 mod crc;
 mod dir;
 mod extent;
@@ -27,16 +26,21 @@ mod mount_point;
 mod super_block;
 mod xattr;
 
+#[cfg(feature = "block_cache")]
+mod cache;
+
 pub use bitmap::*;
 pub use block::*;
 pub use block_group::*;
-pub use cache::*;
 pub use dir::*;
 pub use extent::*;
 pub use file::*;
 pub use inode::*;
 pub use super_block::*;
 pub use xattr::*;
+
+#[cfg(feature = "block_cache")]
+pub use cache::*;
 
 /// All file types. Also matches the defination in directory entries.
 #[derive(PartialEq, Eq, Clone, Copy, Debug)]

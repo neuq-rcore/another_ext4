@@ -12,8 +12,12 @@ mod link;
 mod low_level;
 mod rw;
 
+/// The Ext4 filesystem implementation.
 pub struct Ext4 {
+    #[cfg(feature = "block_cache")]
     block_cache: BlockCache,
+    #[cfg(not(feature = "block_cache"))]
+    block_device: Arc<dyn BlockDevice>,
 }
 
 impl Ext4 {
@@ -42,9 +46,13 @@ impl Ext4 {
         }
         // Create Ext4 instance
         Ok(Self {
+            #[cfg(feature = "block_cache")]
             block_cache: BlockCache::new(block_device),
+            #[cfg(not(feature = "block_cache"))]
+            block_device,
         })
     }
+    
     /// Initializes the root directory.
     pub fn init(&mut self) -> Result<()> {
         // Create root directory

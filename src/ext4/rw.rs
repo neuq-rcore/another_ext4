@@ -1,17 +1,31 @@
+use super::Ext4;
 use crate::constants::*;
 use crate::ext4_defs::*;
 use crate::prelude::*;
-use super::Ext4;
 
 impl Ext4 {
     /// Read a block from block device
     pub(super) fn read_block(&self, block_id: PBlockId) -> Block {
-        self.block_cache.read_block(block_id)
+        #[cfg(feature = "block_cache")]
+        {
+            self.block_cache.read_block(block_id)
+        }
+        #[cfg(not(feature = "block_cache"))]
+        {
+            self.block_device.read_block(block_id)
+        }
     }
 
     /// Write a block to block device
     pub(super) fn write_block(&self, block: &Block) {
-        self.block_cache.write_block(block)
+        #[cfg(feature = "block_cache")]
+        {
+            self.block_cache.write_block(block)
+        }
+        #[cfg(not(feature = "block_cache"))]
+        {
+            self.block_device.write_block(block)
+        }
     }
 
     /// Read super block from block device

@@ -93,6 +93,10 @@ impl<T: 'static> StateExt4FuseFs<T> {
 }
 
 impl<T: 'static> Filesystem for StateExt4FuseFs<T> {
+    fn destroy(&mut self) {
+        self.fs.flush_all();
+    }
+
     fn lookup(&mut self, _req: &Request<'_>, parent: u64, name: &OsStr, reply: ReplyEntry) {
         match self.fs.lookup(parent as u32, name.to_str().unwrap()) {
             Ok(inode_id) => reply.entry(&get_ttl(), &self.get_attr(inode_id).unwrap(), 0),

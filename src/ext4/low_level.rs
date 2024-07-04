@@ -412,7 +412,6 @@ impl Ext4 {
             return_error!(ErrCode::ENOTDIR, "Inode {} is not a directory", parent.id);
         }
         self.dir_find_entry(&parent, name)
-            .map(|entry| entry)
     }
 
     /// List all directory entries in a directory.
@@ -562,13 +561,13 @@ impl Ext4 {
     }
 
     /// List extended attributes of a file.
-    /// 
+    ///
     /// # Params
-    /// 
+    ///
     /// * `inode` - the inode of the file
-    /// 
+    ///
     /// # Returns
-    /// 
+    ///
     /// A list of extended attributes of the file.
     pub fn listxattr(&self, inode: InodeId) -> Result<Vec<String>> {
         let inode_ref = self.read_inode(inode);
@@ -578,5 +577,15 @@ impl Ext4 {
         }
         let xattr_block = XattrBlock::new(self.read_block(xattr_block_id));
         Ok(xattr_block.list())
+    }
+
+    /// Flush all dirty blocks in cache to disk.
+    ///
+    /// This always succeeds.
+    pub fn flush_all(&self) {
+        #[cfg(feature = "block_cache")]
+        {
+            self.block_cache.flush_all();
+        }
     }
 }
