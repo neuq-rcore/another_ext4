@@ -15,6 +15,9 @@ pub const NAME_MAX: usize = 255;
 pub const SYMLINKS_MAX: usize = 40;
 
 /// The inode number of root inode
+#[cfg(feature = "fuser_root_inode")]
+pub const EXT4_ROOT_INO: InodeId = 1;
+#[cfg(not(feature = "fuser_root_inode"))]
 pub const EXT4_ROOT_INO: InodeId = 2;
 
 /// The base offset of the super block

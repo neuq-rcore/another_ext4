@@ -5,7 +5,7 @@ edition = "2021"
 
 [dependencies]
 fuser = "0.13"
-another_ext4 = { path = "..", features = [] }
+another_ext4 = { path = "..", features = ["fuser_root_inode"] }
 simple_logger = "4.3"
 log = "0.4"
 clap = { version = "4.5.6", features = ["derive"] }
