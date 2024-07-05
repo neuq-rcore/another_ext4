@@ -41,34 +41,6 @@ impl Ext4 {
         Ok(cur)
     }
 
-    /// (DEPRECATED) Open a file in the filesystem.
-    ///
-    /// # Params
-    ///
-    /// * `root` - The inode id of the root directory for search.
-    /// * `path` - The path of the object to be opened.
-    /// * `flags` - The open flags. Creation (O_CREAT, O_EXCL, O_NOCTTY) flags
-    ///             will be ignored.
-    ///
-    /// # Return
-    ///
-    /// `Ok(fh)` - File handler
-    ///
-    /// # Error
-    ///
-    /// * `ENOENT` - The file does not exist.
-    /// * `EISDIR` - The file is a directory.
-    #[deprecated]
-    pub fn generic_open(&self, root: InodeId, path: &str, flags: OpenFlags) -> Result<FileHandler> {
-        let inode_id = self.generic_lookup(root, path)?;
-        let inode = self.read_inode(inode_id);
-        // Check file type
-        if !inode.inode.is_file() {
-            return_error!(ErrCode::EISDIR, "File {} is not a regular file", path);
-        }
-        Ok(FileHandler::new(inode.id, flags, inode.inode.size()))
-    }
-
     /// Create an object in the filesystem.
     ///
     /// This function will perform recursive-creation i.e. if the parent

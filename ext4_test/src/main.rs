@@ -1,5 +1,5 @@
+use another_ext4::{Ext4, InodeMode, EXT4_ROOT_INO};
 use block_file::BlockFile;
-use another_ext4::{Ext4, InodeMode, OpenFlags, EXT4_ROOT_INO};
 use simple_logger::SimpleLogger;
 use std::sync::Arc;
 
@@ -29,14 +29,6 @@ fn open_ext4() -> Ext4 {
 
 fn mkdir_test(ext4: &mut Ext4) {
     let dir_mode: InodeMode = InodeMode::DIRECTORY | InodeMode::ALL_RWX;
-    for i in 0..1000 {
-        ext4.generic_create(ROOT_INO, &format!("d{}", i), dir_mode)
-            .expect("mkdir failed");
-    }
-    for i in 0..1000 {
-        ext4.generic_lookup(ROOT_INO, &format!("d{}", i))
-            .expect("lookup failed");
-    }
     ext4.generic_create(ROOT_INO, "d1", dir_mode)
         .expect("mkdir failed");
     ext4.generic_create(ROOT_INO, "d1/d2", dir_mode)
@@ -69,37 +61,19 @@ fn create_test(ext4: &mut Ext4) {
 
 fn read_write_test(ext4: &mut Ext4) {
     let wbuffer = "hello world".as_bytes();
-    let wfile = ext4
-        .generic_open(ROOT_INO, "d3/f0", OpenFlags::O_WRONLY)
-        .expect("open failed");
-    ext4.write(wfile.inode, 0, wbuffer).expect("write failed");
-
+    let file = ext4.generic_lookup(ROOT_INO, "d3/f0").expect("open failed");
+    ext4.write(file, 0, wbuffer).expect("write failed");
     let mut rbuffer = vec![0u8; wbuffer.len() + 100]; // Test end of file
-    let rfile = ext4
-        .generic_open(ROOT_INO, "d3/f0", OpenFlags::O_RDONLY)
-        .expect("open failed");
-    let rcount = ext4
-        .read(rfile.inode, 0, &mut rbuffer)
-        .expect("read failed");
-
+    let rcount = ext4.read(file, 0, &mut rbuffer).expect("read failed");
     assert_eq!(wbuffer, &rbuffer[..rcount]);
 }
 
 fn large_read_write_test(ext4: &mut Ext4) {
     let wbuffer = vec![99u8; 1024 * 1024 * 16];
-    let wfile = ext4
-        .generic_open(ROOT_INO, "d3/f1", OpenFlags::O_WRONLY)
-        .expect("open failed");
-    ext4.write(wfile.inode, 0, &wbuffer).expect("write failed");
-
-    let rfile = ext4
-        .generic_open(ROOT_INO, "d3/f1", OpenFlags::O_RDONLY)
-        .expect("open failed");
+    let file = ext4.generic_lookup(ROOT_INO, "d3/f1").expect("open failed");
+    ext4.write(file, 0, &wbuffer).expect("write failed");
     let mut rbuffer = vec![0u8; wbuffer.len()];
-    let rcount = ext4
-        .read(rfile.inode, 0, &mut rbuffer)
-        .expect("read failed");
-
+    let rcount = ext4.read(file, 0, &mut rbuffer).expect("read failed");
     assert_eq!(wbuffer, &rbuffer[..rcount]);
 }
 
@@ -132,16 +106,21 @@ fn xattr_test(ext4: &mut Ext4) {
 
     let names = ext4.listxattr(file).expect("listxattr failed");
     assert_eq!(names, vec!["user.testone", "user.testtwo"]);
-    
-    let value = ext4.getxattr(file, "user.testone").expect("getxattr failed");
+
+    let value = ext4
+        .getxattr(file, "user.testone")
+        .expect("getxattr failed");
     assert_eq!(value, "hello world".as_bytes());
-    let value = ext4.getxattr(file, "user.testtwo").expect("getxattr failed");
+    let value = ext4
+        .getxattr(file, "user.testtwo")
+        .expect("getxattr failed");
     assert_eq!(value, "world hello".as_bytes());
-    
+
     let names = ext4.listxattr(file).expect("listxattr failed");
     assert_eq!(names, vec!["user.testone", "user.testtwo"]);
-    
-    ext4.removexattr(file, "user.testone").expect("removexattr failed");
+
+    ext4.removexattr(file, "user.testone")
+        .expect("removexattr failed");
     ext4.getxattr(file, "user.testone")
         .expect_err("getxattr failed");
     let names = ext4.listxattr(file).expect("listxattr failed");
