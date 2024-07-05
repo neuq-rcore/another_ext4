@@ -53,9 +53,9 @@ impl Ext4 {
     /// # Return
     ///
     /// `Ok(fh)` - File handler
-    /// 
+    ///
     /// # Error
-    /// 
+    ///
     /// * `ENOENT` - The file does not exist.
     /// * `EISDIR` - The file is a directory.
     #[deprecated]
@@ -129,7 +129,7 @@ impl Ext4 {
     /// # Params
     ///
     /// * `root` - The inode id of the starting directory for search.
-    /// * `path` - The path of the object to remove.
+    /// * `path` - The relative path of the object to remove.
     ///
     /// # Error
     ///
@@ -143,7 +143,7 @@ impl Ext4 {
         // Get the parent directory inode
         let parent_id = self.generic_lookup(root, &parent_path)?;
         // Get the child inode
-        let child_id = self.generic_lookup(parent_id, &file_name)?;
+        let child_id = self.lookup(parent_id, &file_name)?;
         let mut parent = self.read_inode(parent_id);
         let mut child = self.read_inode(child_id);
         // Check if child is a non-empty directory
@@ -152,6 +152,34 @@ impl Ext4 {
         }
         // Unlink the file
         self.unlink_inode(&mut parent, &mut child, file_name, true)
+    }
+
+    /// Move an object from one location to another.
+    ///
+    /// # Params
+    ///
+    /// * `root` - The inode id of the starting directory for search.
+    /// * `src` - The relative path of the object to move.
+    /// * `dst` - The relative path of the destination.
+    ///
+    /// # Error
+    ///
+    /// * `ENOTDIR` - Any parent in the path is not a directory. 
+    /// * `ENOENT` - The source object does not exist.
+    /// * `EEXIST` - The destination object already exists.
+    pub fn generic_rename(&self, root: InodeId, src: &str, dst: &str) -> Result<()> {
+        // Parse the directories and file names
+        let mut src_path = Self::split_path(src);
+        let src_file_name = &src_path.split_off(src_path.len() - 1)[0];
+        let src_parent_path = src_path.join("/");
+        let mut dst_path = Self::split_path(dst);
+        let dst_file_name = &dst_path.split_off(dst_path.len() - 1)[0];
+        let dst_parent_path = dst_path.join("/");
+        // Get source and des inodes
+        let src_parent_id = self.generic_lookup(root, &src_parent_path)?;
+        let dst_parent_id = self.generic_lookup(root, &dst_parent_path)?;
+        // Move the file
+        self.rename(src_parent_id, &src_file_name, dst_parent_id, &dst_file_name)
     }
 
     /// A helper function to split a path by '/'

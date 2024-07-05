@@ -313,9 +313,7 @@ impl Ext4 {
         self.unlink_inode(&mut parent, &mut child, name, true)
     }
 
-    /// Move a file. This function will not check name conflict,
-    /// call `lookup` to check beforehand. Caller should ensure
-    /// `parent/name` and `new_parent/new_name` are different.
+    /// Move a file.
     ///
     /// # Params
     ///
@@ -328,6 +326,7 @@ impl Ext4 {
     ///
     /// * `ENOTDIR` - `parent` or `new_parent` is not a directory
     /// * `ENOENT` - `name` does not exist in `parent`
+    /// * `EEXIST` - `new_parent/new_name` already exists
     /// * `ENOSPC` - no space left on device
     pub fn rename(
         &self,
@@ -336,10 +335,12 @@ impl Ext4 {
         new_parent: InodeId,
         new_name: &str,
     ) -> Result<()> {
+        // Check parent
         let mut parent = self.read_inode(parent);
         if !parent.inode.is_dir() {
             return_error!(ErrCode::ENOTDIR, "Inode {} is not a directory", parent.id);
         }
+        // Check new parent
         let mut new_parent = self.read_inode(new_parent);
         if !new_parent.inode.is_dir() {
             return_error!(
@@ -348,9 +349,14 @@ impl Ext4 {
                 new_parent.id
             );
         }
-        let child_entry = self.dir_find_entry(&parent, name)?;
-        let mut child = self.read_inode(child_entry);
-
+        // Check child existence
+        let child_id = self.dir_find_entry(&parent, name)?;
+        let mut child = self.read_inode(child_id);
+        // Check name conflict
+        if self.dir_find_entry(&new_parent, new_name).is_ok() {
+            return_error!(ErrCode::EEXIST, "Dest name {} already exists", new_name);
+        }
+        // Move
         self.unlink_inode(&mut parent, &mut child, name, false)?;
         self.link_inode(&mut new_parent, &mut child, new_name)
     }
