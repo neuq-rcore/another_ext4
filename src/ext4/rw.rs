@@ -47,8 +47,8 @@ impl Ext4 {
     pub(super) fn read_inode(&self, inode_id: InodeId) -> InodeRef {
         let (block_id, offset) = self.inode_disk_pos(inode_id);
         let block = self.read_block(block_id);
-        let inode = InodeRef::new(inode_id, block.read_offset_as(offset));
-        inode
+        
+        InodeRef::new(inode_id, block.read_offset_as(offset))
     }
 
     /// Read the root inode from block device
@@ -115,7 +115,7 @@ impl Ext4 {
         let inodes_per_group = super_block.inodes_per_group();
 
         let bg_id = ((inode_id - 1) / inodes_per_group) as BlockGroupId;
-        let inode_size = super_block.inode_size() as usize;
+        let inode_size = super_block.inode_size();
         let bg = self.read_block_group(bg_id);
         let id_in_bg = ((inode_id - 1) % inodes_per_group) as usize;
 

@@ -60,7 +60,7 @@ impl Ext4 {
                     dir.inode.generation(),
                 );
                 // Write the block back to disk
-                self.write_block(&dir_block.block());
+                self.write_block(dir_block.block());
                 return Ok(());
             }
             // Current block has no enough space
@@ -82,7 +82,7 @@ impl Ext4 {
             dir.inode.generation(),
         );
         // Write the block back to disk
-        self.write_block(&new_dir_block.block());
+        self.write_block(new_dir_block.block());
 
         Ok(())
     }
@@ -107,7 +107,7 @@ impl Ext4 {
                     dir.inode.generation(),
                 );
                 // Write the block back to disk
-                self.write_block(&dir_block.block());
+                self.write_block(dir_block.block());
                 return Ok(());
             }
             // Current block has no enough space

@@ -124,7 +124,7 @@ impl ExtentIndex {
 
     /// The physical block number of the extent node that is the next level lower in the tree
     pub fn leaf(&self) -> PBlockId {
-        (self.leaf_hi as PBlockId) << 32 | self.leaf_lo as PBlockId
+        ((self.leaf_hi as PBlockId) << 32) | self.leaf_lo as PBlockId
     }
 }
 
@@ -205,7 +205,7 @@ impl Extent {
 
     /// Mark the extent as unwritten
     pub fn mark_unwritten(&mut self) {
-        (*self).block_count |= Self::INIT_MAX_LEN;
+        self.block_count |= Self::INIT_MAX_LEN;
     }
 
     /// Check whether the `ex2` extent can be appended to the `ex1` extent
@@ -215,13 +215,14 @@ impl Extent {
         }
         if ex1.is_unwritten() && ex1.block_count() + ex2.block_count() > 65535 as LBlockId {
             return false;
-        } else if ex1.block_count() + ex2.block_count() > Self::INIT_MAX_LEN as LBlockId {
+        }
+        if ex1.block_count() + ex2.block_count() > Self::INIT_MAX_LEN as LBlockId {
             return false;
         }
-        if ex1.first_block + ex1.block_count() as u32 != ex2.first_block {
+        if ex1.first_block + ex1.block_count() != ex2.first_block {
             return false;
         }
-        return true;
+        true
     }
 }
 
@@ -300,9 +301,9 @@ impl<'a> ExtentNode<'a> {
                 break;
             }
         }
-        let res = Err(i);
+        
         // debug!("Search res: {:?}", res);
-        return res;
+        Err(i)
     }
 
     /// Find the extent index that covers the given logical block number. The extent index
@@ -321,9 +322,9 @@ impl<'a> ExtentNode<'a> {
             }
             i += 1;
         }
-        let res = Ok(i - 1);
+        
         // debug!("Search res: {:?}", res);
-        return res;
+        Ok(i - 1)
     }
 
     pub fn print(&self) {

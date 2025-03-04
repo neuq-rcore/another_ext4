@@ -49,7 +49,7 @@ impl Ext4 {
     /// Free an allocated inode and all data blocks allocated for it
     pub(super) fn free_inode(&self, inode: &mut InodeRef) -> Result<()> {
         // Free the data blocks allocated for the inode
-        let pblocks = self.extent_all_data_blocks(&inode);
+        let pblocks = self.extent_all_data_blocks(inode);
         for pblock in pblocks {
             // Deallocate the block
             self.dealloc_block(inode, pblock)?;
@@ -57,7 +57,7 @@ impl Ext4 {
             self.write_block(&Block::new(pblock, [0; BLOCK_SIZE]));
         }
         // Free extent tree
-        let pblocks = self.extent_all_tree_blocks(&inode);
+        let pblocks = self.extent_all_tree_blocks(inode);
         for pblock in pblocks {
             // Deallocate the block
             self.dealloc_block(inode, pblock)?;

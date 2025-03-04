@@ -13,7 +13,7 @@ use crate::prelude::*;
 use crate::FileType;
 
 bitflags! {
-    #[derive(PartialEq, Debug, Clone, Copy)]
+    #[derive(PartialEq, Eq, Debug, Clone, Copy)]
     pub struct InodeMode: u16 {
         // Premission
         const PERM_MASK = 0xFFF;
@@ -322,7 +322,7 @@ impl Inode {
     }
 
     pub fn xattr_block(&self) -> PBlockId {
-        (self.osd2.l_file_acl_hi as u64) << 32 | self.file_acl as u64
+        ((self.osd2.l_file_acl_hi as u64) << 32) | self.file_acl as u64
     }
 
     pub fn set_xattr_block(&mut self, block: PBlockId) {
@@ -335,14 +335,14 @@ impl Inode {
     /// Get the immutable extent root node
     pub fn extent_root(&self) -> ExtentNode {
         ExtentNode::from_bytes(unsafe {
-            core::slice::from_raw_parts(self.block.as_ptr() as *const u8, 60)
+            core::slice::from_raw_parts(self.block.as_ptr(), 60)
         })
     }
 
     /// Get the mutable extent root node
     pub fn extent_root_mut(&mut self) -> ExtentNodeMut {
         ExtentNodeMut::from_bytes(unsafe {
-            core::slice::from_raw_parts_mut(self.block.as_mut_ptr() as *mut u8, 60)
+            core::slice::from_raw_parts_mut(self.block.as_mut_ptr(), 60)
         })
     }
 
@@ -371,7 +371,7 @@ impl InodeRef {
         let mut checksum = crc32(CRC32_INIT, uuid);
         checksum = crc32(checksum, &self.id.to_le_bytes());
         checksum = crc32(checksum, &self.inode.generation.to_le_bytes());
-        checksum = crc32(checksum, &self.inode.to_bytes());
+        checksum = crc32(checksum, self.inode.to_bytes());
         self.inode.osd2.l_checksum_lo = checksum as u16;
         self.inode.checksum_hi = (checksum >> 16) as u16;
     }

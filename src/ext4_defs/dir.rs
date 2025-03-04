@@ -66,7 +66,7 @@ impl DirEntry {
     /// Create a new directory entry
     pub fn new(inode: InodeId, rec_len: u16, name: &str, file_type: FileType) -> Self {
         let mut name_bytes = [0u8; 255];
-        let name_len = name.as_bytes().len();
+        let name_len = name.len();
         name_bytes[..name_len].copy_from_slice(name.as_bytes());
         Self {
             inode,
@@ -150,7 +150,7 @@ impl DirEntryTail {
     }
 
     pub fn set_checksum(&mut self, uuid: &[u8], ino: InodeId, ino_gen: u32, block: &Block) {
-        let mut csum = crc32(CRC32_INIT, &uuid);
+        let mut csum = crc32(CRC32_INIT, uuid);
         csum = crc32(csum, &ino.to_le_bytes());
         csum = crc32(csum, &ino_gen.to_le_bytes());
         self.checksum = crc32(csum, &block.data[..size_of::<DirEntryTail>()]);
@@ -224,7 +224,7 @@ impl DirBlock {
             // Compare size
             if free_size < required_size {
                 // No enough space, try next dir ent
-                offset = offset + rec_len;
+                offset += rec_len;
                 continue;
             }
             // Has enough space

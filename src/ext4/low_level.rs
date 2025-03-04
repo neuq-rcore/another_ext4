@@ -90,7 +90,7 @@ impl Ext4 {
         }
         if let Some(size) = size {
             // If size increases, allocate new blocks if needed.
-            let required_blocks = (size as usize + INODE_BLOCK_SIZE - 1) / INODE_BLOCK_SIZE;
+            let required_blocks = (size as usize).div_ceil(INODE_BLOCK_SIZE);
             for _ in inode.inode.block_count()..required_blocks as u64 {
                 self.inode_append_block(&mut inode)?;
             }
@@ -161,13 +161,13 @@ impl Ext4 {
     /// * `EISDIR` - `file` is not a regular file
     pub fn read(&self, file: InodeId, offset: usize, buf: &mut [u8]) -> Result<usize> {
         // Get the inode of the file
-        let mut file = self.read_inode(file);
+        let file = self.read_inode(file);
         if !file.inode.is_file() {
             return_error!(ErrCode::EISDIR, "Inode {} is not a file", file.id);
         }
 
         // Read no bytes
-        if buf.len() == 0 {
+        if buf.is_empty() {
             return Ok(0);
         }
         // Calc the actual size to read
@@ -182,7 +182,7 @@ impl Ext4 {
         // Read first block
         if misaligned > 0 {
             let read_len = min(BLOCK_SIZE - misaligned, read_size);
-            let fblock = self.extent_query(&mut file, start_iblock).unwrap();
+            let fblock = self.extent_query(&file, start_iblock).unwrap();
             let block = self.read_block(fblock);
             // Copy data from block to the user buffer
             buf[cursor..cursor + read_len].copy_from_slice(block.read_offset(misaligned, read_len));
@@ -192,7 +192,7 @@ impl Ext4 {
         // Continue with full block reads
         while cursor < read_size {
             let read_len = min(BLOCK_SIZE, read_size - cursor);
-            let fblock = self.extent_query(&mut file, iblock).unwrap();
+            let fblock = self.extent_query(&file, iblock).unwrap();
             let block = self.read_block(fblock);
             // Copy data from block to the user buffer
             buf[cursor..cursor + read_len].copy_from_slice(block.read_offset(0, read_len));
@@ -241,7 +241,7 @@ impl Ext4 {
         let mut iblock = start_iblock;
         while cursor < write_size {
             let write_len = min(BLOCK_SIZE, write_size - cursor);
-            let fblock = self.extent_query(&mut file, iblock)?;
+            let fblock = self.extent_query(&file, iblock)?;
             let mut block = self.read_block(fblock);
             block.write_offset(
                 (offset + cursor) % BLOCK_SIZE,

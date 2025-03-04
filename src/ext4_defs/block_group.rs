@@ -59,19 +59,19 @@ impl BlockGroupDesc {
     const MAX_BLOCK_GROUP_DESC_SIZE: usize = 64;
 
     pub fn block_bitmap_block(&self) -> PBlockId {
-        (self.block_bitmap_hi as PBlockId) << 32 | self.block_bitmap_lo as PBlockId
+        ((self.block_bitmap_hi as PBlockId) << 32) | self.block_bitmap_lo as PBlockId
     }
 
     pub fn inode_bitmap_block(&self) -> PBlockId {
-        (self.inode_bitmap_hi as PBlockId) << 32 | self.inode_bitmap_lo as PBlockId
+        ((self.inode_bitmap_hi as PBlockId) << 32) | self.inode_bitmap_lo as PBlockId
     }
 
     pub fn itable_unused(&self) -> u32 {
-        (self.itable_unused_hi as u32) << 16 | self.itable_unused_lo as u32
+        ((self.itable_unused_hi as u32) << 16) | self.itable_unused_lo as u32
     }
 
     pub fn used_dirs_count(&self) -> u32 {
-        (self.used_dirs_count_hi as u32) << 16 | self.used_dirs_count_lo as u32
+        ((self.used_dirs_count_hi as u32) << 16) | self.used_dirs_count_lo as u32
     }
 
     pub fn set_used_dirs_count(&mut self, cnt: u32) {
@@ -107,15 +107,15 @@ impl BlockGroupDesc {
     }
 
     pub fn set_inode_bitmap_csum(&mut self, uuid: &[u8], bitmap: &Bitmap) {
-        let mut csum = crc32(CRC32_INIT, &uuid);
-        csum = crc32(csum, &bitmap.as_bytes());
+        let mut csum = crc32(CRC32_INIT, uuid);
+        csum = crc32(csum, bitmap.as_bytes());
         self.inode_bitmap_csum_lo = csum as u16;
         self.block_bitmap_csum_hi = (csum >> 16) as u16;
     }
 
     pub fn set_block_bitmap_csum(&mut self, uuid: &[u8], bitmap: &Bitmap) {
-        let mut csum = crc32(CRC32_INIT, &uuid);
-        csum = crc32(csum, &bitmap.as_bytes());
+        let mut csum = crc32(CRC32_INIT, uuid);
+        csum = crc32(csum, bitmap.as_bytes());
         self.block_bitmap_csum_lo = csum as u16;
         self.block_bitmap_csum_hi = (csum >> 16) as u16;
     }
@@ -138,7 +138,7 @@ impl BlockGroupRef {
     pub fn set_checksum(&mut self, uuid: &[u8]) {
         let mut checksum = crc32(CRC32_INIT, uuid);
         checksum = crc32(checksum, &self.id.to_le_bytes());
-        checksum = crc32(checksum, &self.desc.to_bytes());
+        checksum = crc32(checksum, self.desc.to_bytes());
         self.desc.checksum = checksum as u16;
     }
 }

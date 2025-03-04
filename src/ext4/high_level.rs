@@ -69,7 +69,7 @@ impl Ext4 {
             if !cur.inode.is_dir() {
                 return_error!(ErrCode::ENOTDIR, "Parent {} is not a directory", cur.id);
             }
-            match self.dir_find_entry(&cur, &path) {
+            match self.dir_find_entry(&cur, path) {
                 Ok(id) => {
                     if i == search_path.len() - 1 {
                         // Reach the object and it already exists
@@ -115,7 +115,7 @@ impl Ext4 {
         // Get the parent directory inode
         let parent_id = self.generic_lookup(root, &parent_path)?;
         // Get the child inode
-        let child_id = self.lookup(parent_id, &file_name)?;
+        let child_id = self.lookup(parent_id, file_name)?;
         let mut parent = self.read_inode(parent_id);
         let mut child = self.read_inode(child_id);
         // Check if child is a non-empty directory
@@ -151,7 +151,7 @@ impl Ext4 {
         let src_parent_id = self.generic_lookup(root, &src_parent_path)?;
         let dst_parent_id = self.generic_lookup(root, &dst_parent_path)?;
         // Move the file
-        self.rename(src_parent_id, &src_file_name, dst_parent_id, &dst_file_name)
+        self.rename(src_parent_id, src_file_name, dst_parent_id, dst_file_name)
     }
 
     /// A helper function to split a path by '/'

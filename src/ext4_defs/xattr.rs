@@ -124,7 +124,7 @@ impl XattrEntry {
     pub fn new(name: &str, value_size: usize, value_offset: usize) -> Self {
         let mut name_bytes = [0u8; 255];
         let (name_index, name) = Self::match_name(name);
-        let name_len = name.as_bytes().len();
+        let name_len = name.len();
         name_bytes[..name_len].copy_from_slice(name.as_bytes());
         Self {
             name_len: name.len() as u8,
@@ -192,8 +192,8 @@ impl XattrEntry {
             ("system.", 7),
         ];
         for (prefix, index) in prefixes {
-            if name.starts_with(prefix) {
-                return (index, &name[prefix.len()..]);
+            if let Some(stripped) = name.strip_prefix(prefix) {
+                return (index, stripped);
             }
         }
         (0, name)

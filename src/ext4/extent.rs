@@ -173,7 +173,7 @@ impl Ext4 {
     fn insert_extent(
         &self,
         inode_ref: &mut InodeRef,
-        path: &Vec<ExtentSearchStep>,
+        path: &[ExtentSearchStep],
         new_ext: &Extent,
     ) -> Result<()> {
         let leaf = path.last().unwrap();

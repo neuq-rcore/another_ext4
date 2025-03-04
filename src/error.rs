@@ -98,19 +98,19 @@ impl Ext4Error {
 #[macro_export]
 macro_rules! format_error {
     ($code: expr, $message: expr) => {
-        crate::error::Ext4Error::with_message($code, format!($message))
+        $crate::error::Ext4Error::with_message($code, format!($message))
     };
     ($code: expr, $fmt: expr,  $($args:tt)*) => {
-        crate::error::Ext4Error::with_message($code, format!($fmt, $($args)*))
+        $crate::error::Ext4Error::with_message($code, format!($fmt, $($args)*))
     };
 }
 
 #[macro_export]
 macro_rules! return_error {
     ($code: expr, $message: expr) => {
-        return Err(crate::format_error!($code, $message));
+        return Err($crate::format_error!($code, $message));
     };
     ($code: expr, $fmt: expr,  $($args:tt)*) => {
-        return Err(crate::format_error!($code, $fmt, $($args)*));
+        return Err($crate::format_error!($code, $fmt, $($args)*));
     }
 }

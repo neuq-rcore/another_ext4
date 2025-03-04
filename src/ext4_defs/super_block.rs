@@ -153,7 +153,7 @@ impl SuperBlock {
 
     /// The number of block groups.
     pub fn block_group_count(&self) -> u32 {
-        ((self.block_count() + self.blocks_per_group as u64 - 1) / self.blocks_per_group as u64)
+        self.block_count().div_ceil(self.blocks_per_group as u64)
             as u32
     }
 

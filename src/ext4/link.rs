@@ -43,7 +43,7 @@ impl Ext4 {
         if child.inode.is_dir() {
             // Child is a directory
             // Unlink "child/.."
-            self.dir_remove_entry(&child, "..")?;
+            self.dir_remove_entry(child, "..")?;
             parent.inode.set_link_count(parent.inode.link_count() - 1);
             self.write_inode_with_csum(parent);
         }

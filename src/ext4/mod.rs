@@ -37,7 +37,7 @@ impl Ext4 {
             return_error!(ErrCode::EINVAL, "Invalid inode size {}", sb.inode_size());
         }
         // Check block group desc size
-        if sb.desc_size() as usize != SB_GOOD_DESC_SIZE {
+        if sb.desc_size() != SB_GOOD_DESC_SIZE {
             return_error!(
                 ErrCode::EINVAL,
                 "Invalid block group desc size {}",

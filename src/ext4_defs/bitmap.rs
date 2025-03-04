@@ -24,19 +24,13 @@ impl<'a> Bitmap<'a> {
     /// Find the first clear bit in the range `[start, end)`
     pub fn first_clear_bit(&self, start: usize, end: usize) -> Option<usize> {
         let end = core::cmp::min(end, self.0.len() * 8);
-        for i in start..end {
-            if self.is_bit_clear(i) {
-                return Some(i);
-            }
-        }
-        None
+        (start..end).find(|&i| self.is_bit_clear(i))
     }
 
     /// Find the first clear bit in the range `[start, end)` and set it if found
     pub fn find_and_set_first_clear_bit(&mut self, start: usize, end: usize) -> Option<usize> {
-        self.first_clear_bit(start, end).map(|bit| {
+        self.first_clear_bit(start, end).inspect(|&bit| {
             self.set_bit(bit);
-            bit
         })
     }
 }
