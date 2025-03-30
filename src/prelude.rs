@@ -27,9 +27,9 @@ pub(crate) use core::ptr;
 pub(crate) use log::{debug, info, trace, warn};
 
 pub(crate) use crate::error::*;
-pub(crate) type Result<T> = core::result::Result<T, Ext4Error>;
+pub type Result<T> = core::result::Result<T, Ext4Error>;
 
-pub(crate) type LBlockId = u32;
-pub(crate) type PBlockId = u64;
-pub(crate) type InodeId = u32;
-pub(crate) type BlockGroupId = u32;
+pub type LBlockId = u32;
+pub type PBlockId = u64;
+pub type InodeId = u32;
+pub type BlockGroupId = u32;
